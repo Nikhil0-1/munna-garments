@@ -1,19 +1,41 @@
 {
-  "name": "munna-readymade-garments",
-  "version": "1.0.0",
-  "description": "Complete Shop Management System for Munna Readymade Garments, Dhobwal Bazzar",
+  "name": "client",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
-    "build": "cd client && npm install && npm run build",
-    "vercel-build": "cd client && npm install && npm run build",
-    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
-    "start": "concurrently \"npm run start:server\" \"npm run dev:client\"",
-    "start:server": "cd server && npm start"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "axios": "^1.20.0",
+    "firebase": "^12.19.0",
+    "framer-motion": "^13.4.0",
+    "html2canvas": "^1.4.1",
+    "jsbarcode": "^3.12.3",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^1.47.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-hot-toast": "^2.6.1",
+    "react-router-dom": "^7.18.4",
+    "react-to-print": "^3.3.0",
+    "recharts": "^3.10.1",
+    "tailwindcss": "^4.3.3",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@types/node": "^24.13.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
   }
 }
