@@ -98,7 +98,7 @@ export default function Barcode() {
 
       {/* Printable Sheet */}
       {selectedProduct ? (
-        <div className="p-4 bg-gray-100 rounded-2xl flex justify-center">
+        <div id="barcode-print" className="p-4 bg-gray-100 rounded-2xl flex justify-center">
           <div className="bg-white p-6 shadow-sm grid grid-cols-2 md:grid-cols-4 gap-4" style={{ width: '100%', maxWidth: '210mm' }}>
             {Array.from({ length: labelQty }).map((_, idx) => (
               <div

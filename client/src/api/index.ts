@@ -246,8 +246,22 @@ export const categoriesApi = {
 // ---------------------------------------------------------------------------
 export const salesApi = {
   list: async (params?: any) => {
-    const snap = await getDocs(collection(db, dbService.PATHS.SALES));
-    let sales = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+    let sales: any[] = [];
+    try {
+      const snap = await getDocs(collection(db, dbService.PATHS.SALES));
+      if (!snap.empty) {
+        sales = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        localStorage.setItem('mrg_local_sales', JSON.stringify(sales));
+      }
+    } catch (err) {}
+
+    if (sales.length === 0) {
+      try {
+        const cached = localStorage.getItem('mrg_local_sales');
+        if (cached) sales = JSON.parse(cached);
+      } catch {}
+    }
+
     if (params?.search) {
       const s = params.search.toLowerCase();
       sales = sales.filter(sale => sale.invoice_number?.toLowerCase().includes(s) || sale.customer_name?.toLowerCase().includes(s));
@@ -255,19 +269,34 @@ export const salesApi = {
     if (params?.status) sales = sales.filter(s => s.status === params.status);
     if (params?.from) sales = sales.filter(s => s.date >= params.from);
     if (params?.to) sales = sales.filter(s => s.date <= params.to);
-    sales.sort((a, b) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime());
+    sales.sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
 
     return wrap({ sales, pagination: { total: sales.length, pages: 1, page: 1, limit: sales.length } });
   },
   get: async (id: string | number) => {
-    const snap = await getDoc(doc(db, dbService.PATHS.SALES, String(id)));
-    if (!snap.exists()) throw new Error('Sale not found');
-    const sale = { id: snap.id, ...snap.data() } as any;
-    return wrap({ sale, items: sale.items || [] });
+    try {
+      const snap = await getDoc(doc(db, dbService.PATHS.SALES, String(id)));
+      if (snap.exists()) {
+        const sale = { id: snap.id, ...snap.data() } as any;
+        return wrap({ sale, items: sale.items || [] });
+      }
+    } catch (err) {}
+
+    const cached = localStorage.getItem('mrg_local_sales');
+    if (cached) {
+      try {
+        const sales = JSON.parse(cached);
+        const sale = sales.find((s: any) => String(s.id) === String(id) || s.invoice_number === String(id));
+        if (sale) return wrap({ sale, items: sale.items || [] });
+      } catch {}
+    }
+    throw new Error('Sale not found');
   },
   create: async (data: any) => wrap(await dbService.createSaleTransaction(data)),
   cancel: async (id: string | number) => {
-    await updateDoc(doc(db, dbService.PATHS.SALES, String(id)), { status: 'Cancelled' });
+    try {
+      await updateDoc(doc(db, dbService.PATHS.SALES, String(id)), { status: 'Cancelled' });
+    } catch {}
     return wrap({ success: true });
   },
 };

@@ -48,10 +48,11 @@
     border-radius: 3px;
   }
 
-  /* Print styles for A5 invoice */
+  /* Print styles for A5 invoice and Hangtags */
   @media print {
+    .no-print { display: none !important; }
     body * { visibility: hidden; }
-    #invoice-print, #invoice-print * { visibility: visible; }
+    #invoice-print, #invoice-print *, #barcode-print, #barcode-print * { visibility: visible; }
     #invoice-print {
       position: fixed;
       top: 0;
@@ -59,10 +60,18 @@
       width: 148mm;
       min-height: 210mm;
       background: white !important;
+      z-index: 9999;
+    }
+    #barcode-print {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background: white !important;
+      z-index: 9999;
     }
     @page {
-      size: A5 portrait;
-      margin: 0;
+      margin: 5mm;
     }
   }
 }

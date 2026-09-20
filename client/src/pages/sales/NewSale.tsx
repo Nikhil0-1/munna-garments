@@ -257,10 +257,11 @@ export default function NewSale() {
 
   async function completeSale() {
     if (cart.length === 0) { toast.error('Cart is empty'); return; }
-    if (!paidAmount && paymentMethod !== 'Credit') {
-      toast.error('Please enter paid amount');
-      return;
-    }
+
+    const actualPaid = paidAmount !== ''
+      ? (parseFloat(paidAmount || '0') + parseFloat(paidAmount2 || '0'))
+      : (paymentMethod === 'Credit' ? 0 : finalTotal);
+    const actualDue = Math.max(0, finalTotal - actualPaid);
 
     setLoading(true);
     try {
@@ -280,8 +281,8 @@ export default function NewSale() {
         igst_amount: 0,
         round_off: roundOff,
         total_amount: finalTotal,
-        paid_amount: paid,
-        due_amount: due,
+        paid_amount: actualPaid,
+        due_amount: actualDue,
         payment_method: paymentMethod,
         payment_method_2: splitPayment ? paymentMethod2 : null,
         paid_amount_2: splitPayment ? parseFloat(paidAmount2 || '0') : 0,
@@ -289,11 +290,19 @@ export default function NewSale() {
       };
 
       const res = await salesApi.create(saleData);
-      setCompletedSale({ ...res.data, shopSettings: settings });
+      const resData = res.data as any;
+      const invoiceNum = resData?.invoiceNumber || resData?.invoice_number || resData?.sale?.invoice_number;
+      setCompletedSale({
+        ...res.data,
+        invoiceNumber: invoiceNum,
+        sale: res.data.sale || res.data,
+        items: res.data.items || res.data.sale?.items || cart,
+        shopSettings: settings,
+      });
       setShowSuccess(true);
-      toast.success(`Sale completed! Invoice: ${res.data.invoiceNumber}`, { duration: 5000 });
+      toast.success(`Sale completed! Invoice: ${invoiceNum}`, { duration: 5000 });
 
-      // Reset
+      // Reset cart
       setTimeout(() => {
         setCart([]);
         setCustomer({ id: null, name: 'Walk-in Customer', phone: '' });
@@ -305,7 +314,7 @@ export default function NewSale() {
         setNotes('');
       }, 500);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Sale failed');
+      toast.error(err.response?.data?.error || err.message || 'Sale failed');
     } finally {
       setLoading(false);
     }
@@ -740,8 +749,8 @@ export default function NewSale() {
       {/* Invoice Print Modal */}
       {showInvoice && completedSale && (
         <InvoicePrint
-          sale={completedSale.sale || {}}
-          items={completedSale.items || []}
+          sale={completedSale.sale || completedSale || {}}
+          items={completedSale.items || completedSale.sale?.items || []}
           onClose={() => setShowInvoice(false)}
         />
       )}
