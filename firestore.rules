@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Public Digital Showroom: Sabhi customers catalogue dekh sakein
+    match /publicCatalogue/{document=**} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 2. Shop Data (POS, Inventory, Billing, Ledgers, Settings)
+    // Testing & Shop setup ke dauran smooth access ke liye
+    match /privateShopData/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 3. User accounts & backup data
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
