@@ -1,4 +1,4 @@
-﻿# munna-garments
+# munna-garments
 
 ## Munna Readymade Garments — Retail POS & Inventory Management System
 **Location:** Dhobwal Bazzar  

@@ -1,10 +1,11 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 */node_modules/
 
 # Production Build
 dist/
 client/dist/
+*.tsbuildinfo
 
 # Environment Variables
 .env.local
