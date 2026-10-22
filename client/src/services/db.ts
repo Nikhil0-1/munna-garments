@@ -16,7 +16,7 @@ import {
   serverTimestamp,
   type DocumentData
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage, auth } from './firebase';
 
 // Collection paths following prompt architecture
@@ -1945,16 +1945,25 @@ export async function uploadProductImage(file: File, productId: string): Promise
     throw new Error('Only image files (JPEG, PNG, WEBP) are allowed.');
   }
 
-  // 100% Free & Zero-Setup Strategy:
-  // Try Firebase Storage first; if Storage is on free plan / not activated,
-  // seamlessly compress the image into lightweight Base64 stored directly in Firestore!
+  // If user is not authenticated, use base64 fallback immediately
+  if (!auth.currentUser) {
+    console.warn('Not authenticated — using base64 fallback for image storage.');
+    return await compressImageToBase64(file, 800, 0.75);
+  }
+
   try {
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
     const storageRef = ref(storage, `product_images/${productId}/${filename}`);
-    await uploadBytes(storageRef, file, { contentType: file.type });
+
+    // uploadBytesResumable avoids the CORS preflight issue that uploadBytes triggers
+    await new Promise<void>((resolve, reject) => {
+      const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+      task.on('state_changed', null, reject, () => resolve());
+    });
+
     return await getDownloadURL(storageRef);
   } catch (storageErr) {
-    console.warn('Firebase Storage not active or failed, using 100% Free compressed Base64:', storageErr);
+    console.warn('Firebase Storage upload failed — using compressed Base64 fallback:', storageErr);
     return await compressImageToBase64(file, 800, 0.75);
   }
 }
