@@ -7,9 +7,10 @@ dist/
 client/dist/
 *.tsbuildinfo
 
-# Environment Variables
-.env.local
-*.local
+# Environment Variables — NEVER commit real credentials
+.env
+.env.*
+!.env.example
 
 # Logs
 logs/

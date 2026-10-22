@@ -1,46 +1,67 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Sparkles, ShieldCheck, Lock } from 'lucide-react';
+import { Eye, EyeOff, Sparkles, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authApi } from '../api';
 import { useAuthStore } from '../store';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
+type Mode = 'signin' | 'signup' | 'forgot';
+
 export default function Login() {
-  const [form, setForm] = useState({ email: '', password: '', name: 'Munna Readymade Garments Owner' });
+  const [mode, setMode] = useState<Mode>('signin');
+  const [form, setForm] = useState({ email: '', password: '', name: 'Munna Readymade Garments Owner', confirmPassword: '' });
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isFirstTime, setIsFirstTime] = useState(false);
   const { login } = useAuthStore();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    authApi.isInitialized().then(res => {
-      setIsFirstTime(!res.data.initialized);
-    }).catch(() => {});
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.email.trim() || !form.password.trim()) {
-      setError('Please enter Owner Email and password');
-      return;
-    }
-    setLoading(true);
     setError('');
 
+    if (mode === 'forgot') {
+      if (!form.email.trim()) { setError('Enter your email address'); return; }
+      setLoading(true);
+      try {
+        await authApi.sendPasswordReset(form.email.trim());
+        toast.success('Password reset email sent! Check your inbox.');
+        setMode('signin');
+      } catch (err: any) {
+        setError(err.message || 'Failed to send reset email');
+        toast.error(err.message || 'Failed to send reset email');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (!form.email.trim() || !form.password.trim()) {
+      setError('Please enter your email and password');
+      return;
+    }
+    if (mode === 'signup' && form.password !== form.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (mode === 'signup' && form.password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+
+    setLoading(true);
     try {
-      if (isFirstTime) {
+      if (mode === 'signup') {
         const res = await authApi.setupInitial({
           email: form.email.trim(),
           password: form.password.trim(),
           name: form.name || 'Munna Readymade Garments Owner',
         });
         login(res.data.user, res.data.token);
-        toast.success(`Owner account created! Welcome, ${res.data.user.name}`);
+        toast.success(`Welcome, ${res.data.user.name}! Owner account created.`);
         navigate('/dashboard');
       } else {
         const res = await authApi.login({
@@ -52,7 +73,7 @@ export default function Login() {
         navigate('/dashboard');
       }
     } catch (err: any) {
-      const msg = err.message || err.response?.data?.error || 'Authentication failed. Please check your credentials.';
+      const msg = err.message || 'Authentication failed. Please check your credentials.';
       setError(msg);
       toast.error(msg);
     } finally {
@@ -60,9 +81,18 @@ export default function Login() {
     }
   };
 
+  const features = [
+    { label: 'POS Billing', emoji: '🧾' },
+    { label: 'Cloud Inventory', emoji: '☁️' },
+    { label: 'Barcode Printing', emoji: '🏷️' },
+    { label: 'Public Showroom', emoji: '🛍️' },
+    { label: 'Khata Ledgers', emoji: '👥' },
+    { label: 'Owner-Only Access', emoji: '🔒' },
+  ];
+
   return (
     <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #FFF8F0 0%, #FAF0DC 40%, #F5EFE6 100%)' }}>
-      {/* Left panel - Branding */}
+      {/* Left panel */}
       <div className="hidden lg:flex flex-col items-center justify-center flex-1 relative overflow-hidden p-12">
         <div className="absolute top-[-100px] left-[-100px] w-[400px] h-[400px] rounded-full opacity-20" style={{ background: 'radial-gradient(circle, #C9A96E, transparent)' }} />
         <div className="absolute bottom-[-80px] right-[-80px] w-[350px] h-[350px] rounded-full opacity-15" style={{ background: 'radial-gradient(circle, #8B7355, transparent)' }} />
@@ -99,14 +129,7 @@ export default function Login() {
             transition={{ delay: 0.8 }}
             className="mt-12 grid grid-cols-3 gap-6"
           >
-            {[
-              { label: 'POS Billing', emoji: '🧾' },
-              { label: 'Cloud Inventory', emoji: '☁️' },
-              { label: 'Barcode Scanning', emoji: '🏷️' },
-              { label: 'Public Showroom', emoji: '🛍️' },
-              { label: 'Khata Ledgers', emoji: '👥' },
-              { label: 'Owner-Only Access', emoji: '🔒' },
-            ].map((f, i) => (
+            {features.map((f, i) => (
               <motion.div
                 key={f.label}
                 initial={{ opacity: 0, scale: 0.8 }}
@@ -123,7 +146,7 @@ export default function Login() {
         </motion.div>
       </div>
 
-      {/* Right panel - Login form */}
+      {/* Right panel */}
       <div className="flex flex-col items-center justify-center flex-1 lg:max-w-md p-8">
         <motion.div
           initial={{ opacity: 0, x: 30 }}
@@ -146,17 +169,21 @@ export default function Login() {
               <span className="text-xs font-bold tracking-widest text-amber-800 uppercase">Shop Administration</span>
             </div>
             <h2 className="text-2xl font-semibold text-gray-900">
-              {isFirstTime ? 'Owner Initialization' : 'Owner Sign In'}
+              {mode === 'forgot' ? 'Reset Password'
+                : mode === 'signup' ? 'Create Owner Account'
+                : 'Owner Sign In'}
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              {isFirstTime
+              {mode === 'forgot'
+                ? 'Enter your email to receive a password reset link'
+                : mode === 'signup'
                 ? 'Create the primary Owner credentials for Munna Garments'
                 : 'Enter your credentials to access POS billing and inventory'}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isFirstTime && (
+            {mode === 'signup' && (
               <Input
                 label="Owner Name"
                 placeholder="Munna Garments Owner"
@@ -177,20 +204,34 @@ export default function Login() {
               required
             />
 
-            <Input
-              label="Password"
-              type={showPwd ? 'text' : 'password'}
-              placeholder="Enter your password"
-              value={form.password}
-              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              autoComplete="current-password"
-              required
-              rightElement={
-                <button type="button" onClick={() => setShowPwd(!showPwd)} className="p-1" style={{ color: '#B5A896' }}>
-                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              }
-            />
+            {mode !== 'forgot' && (
+              <Input
+                label="Password"
+                type={showPwd ? 'text' : 'password'}
+                placeholder={mode === 'signup' ? 'Min 8 characters' : 'Enter your password'}
+                value={form.password}
+                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                required
+                rightElement={
+                  <button type="button" onClick={() => setShowPwd(!showPwd)} className="p-1" style={{ color: '#B5A896' }}>
+                    {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                }
+              />
+            )}
+
+            {mode === 'signup' && (
+              <Input
+                label="Confirm Password"
+                type={showPwd ? 'text' : 'password'}
+                placeholder="Re-enter password"
+                value={form.confirmPassword}
+                onChange={e => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                autoComplete="new-password"
+                required
+              />
+            )}
 
             {error && (
               <motion.div
@@ -204,11 +245,31 @@ export default function Login() {
             )}
 
             <Button type="submit" className="w-full" size="lg" loading={loading} icon={<Sparkles size={16} />}>
-              {isFirstTime ? 'Initialize Owner Account' : 'Sign In as Owner'}
+              {mode === 'forgot' ? 'Send Reset Link'
+                : mode === 'signup' ? 'Create Owner Account'
+                : 'Sign In as Owner'}
             </Button>
           </form>
 
-          <div className="mt-8 text-center">
+          <div className="mt-5 space-y-2 text-center text-xs">
+            {mode === 'signin' && (
+              <>
+                <button onClick={() => { setMode('forgot'); setError(''); }} className="text-amber-700 hover:underline block w-full">
+                  Forgot password?
+                </button>
+                <button onClick={() => { setMode('signup'); setError(''); }} className="text-gray-500 hover:text-amber-800 hover:underline">
+                  First time? Create owner account →
+                </button>
+              </>
+            )}
+            {(mode === 'signup' || mode === 'forgot') && (
+              <button onClick={() => { setMode('signin'); setError(''); }} className="text-amber-700 hover:underline">
+                ← Back to Sign In
+              </button>
+            )}
+          </div>
+
+          <div className="mt-6 text-center">
             <button
               onClick={() => navigate('/catalogue')}
               className="text-xs text-amber-800 font-semibold hover:underline"

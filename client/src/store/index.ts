@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { signOutOwner } from '../services/auth';
 
 export interface User {
   id?: number | string;
@@ -34,6 +35,8 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem('mrg_token');
         localStorage.removeItem('mrg_user');
         set({ user: null, token: null });
+        // Also sign out of Firebase so the session token is invalidated
+        signOutOwner().catch(() => {});
       },
       isAuthenticated: () => !!get().token,
       isOwner: () => get().user?.role === 'owner',

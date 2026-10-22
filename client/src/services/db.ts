@@ -71,33 +71,29 @@ export async function logAction(action: string, module: string, recordId: string
 // ---------------------------------------------------------------------------
 
 /**
- * Generate a unique barcode based on product SKU or retail standard format.
- * Format: e.g. "890" (India standard) + "MRG" + 6-digit unique number
+ * Generate a globally unique barcode using a Firestore atomic counter.
+ * The counter is incremented in a transaction so no two products can
+ * get the same barcode even with concurrent creation.
+ * Format: 890MRG######  (India GS1 prefix + shop prefix + 6-digit sequence)
  */
 export async function generateUniqueBarcode(skuPrefix: string = 'MRG'): Promise<string> {
-  let isUnique = false;
-  let attempts = 0;
-  let barcode = '';
+  const counterRef = doc(db, PATHS.SETTINGS, 'barcode_counter');
 
-  while (!isUnique && attempts < 10) {
-    attempts++;
-    const randomNum = Math.floor(100000 + Math.random() * 900000);
-    barcode = `890${skuPrefix}${randomNum}`;
-
-    // Verify barcode uniqueness against Firestore
-    const q = query(collection(db, PATHS.PRODUCTS), where('barcode', '==', barcode), limit(1));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      isUnique = true;
-    }
+  try {
+    const newCounter = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const current = snap.exists() ? (Number(snap.data().counter) || 0) : 100000;
+      const next = current + 1;
+      tx.set(counterRef, { counter: next }, { merge: true });
+      return next;
+    });
+    return `890${skuPrefix}${String(newCounter).padStart(6, '0')}`;
+  } catch {
+    // Fallback for offline mode: timestamp-based (still very unlikely to collide)
+    return `890${skuPrefix}${Date.now().toString().slice(-6)}`;
   }
-
-  if (!isUnique) {
-    barcode = `890${skuPrefix}${Date.now().toString().slice(-6)}`;
-  }
-
-  return barcode;
 }
+
 
 /**
  * Check if a barcode already exists in the system.

@@ -4,40 +4,34 @@ import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
-export const firebaseConfig = {
-  apiKey: "AIzaSyBiHIN7wanEWDrCmvyxkjgKrbgvxzgzHwc",
-  authDomain: "munnagarments-9fb61.firebaseapp.com",
-  databaseURL: "https://munnagarments-9fb61-default-rtdb.firebaseio.com",
-  projectId: "munnagarments-9fb61",
-  storageBucket: "munnagarments-9fb61.firebasestorage.app",
-  messagingSenderId: "422188785051",
-  appId: "1:422188785051:web:6a2058145f4de9134b153e",
-  measurementId: "G-X7LQD8X85H"
+/**
+ * All Firebase credentials come exclusively from environment variables.
+ * Never hardcode keys here — use .env (which is gitignored).
+ * See .env.example for required variable names.
+ */
+const firebaseConfig = {
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL:       import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-export function getFirebaseApiKey(): string {
-  try {
-    const saved = localStorage.getItem('mrg_firebase_api_key');
-    if (saved && saved.trim().length > 10) return saved.trim();
-  } catch {}
-  return import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey;
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  console.error(
+    '[MRG] Firebase config is missing. Please create a .env file from .env.example and fill in your Firebase credentials.'
+  );
 }
 
-export function setFirebaseApiKey(newKey: string) {
-  if (newKey && newKey.trim()) {
-    localStorage.setItem('mrg_firebase_api_key', newKey.trim());
-    window.location.reload();
-  }
-}
+// Initialize Firebase (singleton — safe to call multiple times)
+export const app =
+  getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firebase App with exact credentials
-export const app = getApps().length > 0 ? getApp() : initializeApp({
-  ...firebaseConfig,
-  apiKey: getFirebaseApiKey()
-});
-
-// Initialize Firebase services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const rtdb = getDatabase(app);
+// Firebase services
+export const auth    = getAuth(app);
+export const db      = getFirestore(app);
+export const rtdb    = getDatabase(app);
 export const storage = getStorage(app);

@@ -2,22 +2,37 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Public Digital Showroom: Sabhi customers catalogue dekh sakein
+    // ── Helper: is the request from an authenticated owner? ──────────────────
+    // The frontend stores the Firebase UID as the "token" in Zustand.
+    // All private data operations require Firebase Auth.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ── 1. PUBLIC DIGITAL SHOWROOM ───────────────────────────────────────────
+    // Anyone can read catalogue/shop-info. Only authenticated owners can write.
     match /publicCatalogue/{document=**} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAuthenticated();
     }
 
-    // 2. Shop Data (POS, Inventory, Billing, Ledgers, Settings)
-    // Testing & Shop setup ke dauran smooth access ke liye
+    // ── 2. PRIVATE SHOP DATA (POS, Inventory, Billing, Ledgers) ─────────────
+    // Only authenticated users (owner/admins logged in via Firebase Auth) may
+    // read or write private business records.
     match /privateShopData/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
-    // 3. User accounts & backup data
+    // ── 3. USER ACCOUNTS ─────────────────────────────────────────────────────
+    // A user may only read/write their own profile document.
+    match /users/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // ── 4. DEFAULT DENY ──────────────────────────────────────────────────────
+    // Any collection not matched above is denied.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-

@@ -1,9 +1,12 @@
-import { useRef } from 'react';
-import { Printer, Download, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Printer, Download, X, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { formatCurrency, formatDate } from '../../utils';
 import { useSettingsStore } from '../../store';
 import Button from '../ui/Button';
+import toast from 'react-hot-toast';
 
 interface InvoicePrintProps {
   sale: any;
@@ -14,35 +17,109 @@ interface InvoicePrintProps {
 export default function InvoicePrint({ sale, items, onClose }: InvoicePrintProps) {
   const { settings } = useSettingsStore();
   const printRef = useRef<HTMLDivElement>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const handlePrint = () => {
     window.print();
   };
 
+  const handleDownloadPDF = async () => {
+    if (!printRef.current) return;
+    setDownloadingPdf(true);
+    toast('Generating invoice PDF…', { icon: '⏳' });
+    try {
+      // Wait a tick for any fonts/images to settle
+      await new Promise(r => setTimeout(r, 300));
+
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      // A5 dimensions in mm: 148 × 210
+      const pdf = new jsPDF({ unit: 'mm', format: 'a5', orientation: 'portrait' });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+
+      // Scale canvas to fit A5 page
+      const canvasAspect = canvas.height / canvas.width;
+      const imgH = pdfW * canvasAspect;
+
+      if (imgH <= pdfH) {
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfW, imgH);
+      } else {
+        // Multi-page: slice canvas
+        let y = 0;
+        const pageHeightPx = canvas.width * (pdfH / pdfW);
+        while (y < canvas.height) {
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = Math.min(pageHeightPx, canvas.height - y);
+          const ctx = sliceCanvas.getContext('2d')!;
+          ctx.drawImage(canvas, 0, -y);
+          const sliceData = sliceCanvas.toDataURL('image/png');
+          if (y > 0) pdf.addPage();
+          pdf.addImage(sliceData, 'PNG', 0, 0, pdfW, sliceCanvas.height * pdfW / sliceCanvas.width);
+          y += pageHeightPx;
+        }
+      }
+
+      const invoiceNo = sale?.invoice_number || 'INV';
+      pdf.save(`Invoice_${invoiceNo}.pdf`);
+      toast.success(`Invoice PDF downloaded — ${invoiceNo}`);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast.error('PDF generation failed. Try printing instead.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   const invoiceNumber = sale?.invoice_number || 'INV-0000';
-  const invoiceDate = sale?.date ? formatDate(sale.date) : formatDate(new Date().toISOString());
-  const customerName = sale?.customer_name || 'Walk-in Customer';
+  const invoiceDate   = sale?.date ? formatDate(sale.date) : formatDate(new Date().toISOString());
+  const customerName  = sale?.customer_name  || 'Walk-in Customer';
   const customerPhone = sale?.customer_phone || '';
 
-  const subtotal = Number(sale?.subtotal || 0);
-  const discountAmount = Number(sale?.discount_amount || 0);
-  const gstAmount = Number(sale?.gst_amount || 0);
-  const cgstAmount = Number(sale?.cgst_amount || gstAmount / 2);
-  const sgstAmount = Number(sale?.sgst_amount || gstAmount / 2);
-  const roundOff = Number(sale?.round_off || 0);
-  const totalAmount = Number(sale?.total_amount || 0);
-  const paidAmount = Number(sale?.paid_amount || 0);
-  const dueAmount = Number(sale?.due_amount || 0);
+  const subtotal      = Number(sale?.subtotal      || 0);
+  const discountAmount= Number(sale?.discount_amount|| 0);
+  const gstAmount     = Number(sale?.gst_amount     || 0);
+  const cgstAmount    = Number(sale?.cgst_amount    || gstAmount / 2);
+  const sgstAmount    = Number(sale?.sgst_amount    || gstAmount / 2);
+  const roundOff      = Number(sale?.round_off      || 0);
+  const totalAmount   = Number(sale?.total_amount   || 0);
+  const paidAmount    = Number(sale?.paid_amount    || 0);
+  const dueAmount     = Number(sale?.due_amount     || 0);
   const paymentMethod = sale?.payment_method || 'Cash';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" style={{ background: 'rgba(26,26,46,0.6)', backdropFilter: 'blur(4px)' }}>
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[95vh] overflow-hidden my-auto">
         {/* Modal Controls */}
-        <div className="flex items-center justify-between px-6 py-4 no-print" style={{ borderBottom: '1px solid #F0EBE3' }}>
-          <h2 className="font-serif font-semibold text-lg">Tax Invoice / Receipt</h2>
+        <div className="flex items-center justify-between px-6 py-4 no-print flex-shrink-0" style={{ borderBottom: '1px solid #F0EBE3' }}>
+          <div>
+            <h2 className="font-serif font-semibold text-lg">Tax Invoice / Receipt</h2>
+            {dueAmount <= 0 && (
+              <div className="flex items-center gap-1 text-green-600 text-xs mt-0.5">
+                <CheckCircle size={12} /> Fully paid
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={handlePrint} icon={<Printer size={15} />}>Print A5</Button>
+            <Button size="sm" variant="secondary" onClick={handlePrint} icon={<Printer size={15} />}>
+              Print
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleDownloadPDF}
+              icon={<Download size={15} />}
+              loading={downloadingPdf}
+              disabled={downloadingPdf}
+            >
+              Download PDF
+            </Button>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#F5EFE6] transition-colors" style={{ color: '#8B7355' }}>
               <X size={18} />
             </button>
@@ -141,7 +218,7 @@ export default function InvoicePrint({ sale, items, onClose }: InvoicePrintProps
                     <QRCodeSVG value={`https://wa.me/${(settings.shop_whatsapp || '').replace(/\D/g, '')}?text=Invoice%20${invoiceNumber}`} size={56} />
                     <div className="text-[9px] text-gray-500">
                       <p className="font-semibold text-gray-700">Scan for WhatsApp</p>
-                      <p>Customer Support & Inquiries</p>
+                      <p>Customer Support &amp; Inquiries</p>
                     </div>
                   </div>
                   <div className="mt-3 text-[8.5px] text-gray-500 italic">
