@@ -5,32 +5,24 @@ import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
 /**
- * All Firebase credentials come exclusively from environment variables.
- * Never hardcode keys here — use .env (which is gitignored).
- * See .env.example for required variable names.
+ * Munna Readymade Garments — Firebase Modular SDK Configuration
+ * Uses environment variables when available with production project fallback.
  */
-const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL:       import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+export const firebaseConfig = {
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || 'AIzaSyBiHIN7wanEWDrCmvyxkjgKrbgvxzgzHwc',
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || 'munnagarments-9fb61.firebaseapp.com',
+  databaseURL:       import.meta.env.VITE_FIREBASE_DATABASE_URL       || 'https://munnagarments-9fb61-default-rtdb.firebaseio.com',
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || 'munnagarments-9fb61',
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET     || 'munnagarments-9fb61.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '422188785051',
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID             || '1:422188785051:web:6a2058145f4de9134b153e',
+  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID     || 'G-X7LQD8X85H',
 };
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error(
-    '[MRG] Firebase config is missing. Please create a .env file from .env.example and fill in your Firebase credentials.'
-  );
-}
+// Initialize Firebase as singleton
+export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firebase (singleton — safe to call multiple times)
-export const app =
-  getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-
-// Firebase services
+// Firebase modular services
 export const auth    = getAuth(app);
 export const db      = getFirestore(app);
 export const rtdb    = getDatabase(app);

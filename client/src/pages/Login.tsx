@@ -261,18 +261,20 @@ export default function Login() {
           <div className="mt-5 space-y-2 text-center text-xs">
             {mode === 'signin' && (
               <>
-                <button onClick={() => { setMode('forgot'); setError(''); }} className="text-amber-700 hover:underline block w-full">
+                <button type="button" onClick={() => { setMode('forgot'); setError(''); }} className="text-amber-700 hover:underline block w-full">
                   Forgot password?
                 </button>
-                {!ownerInitialized && (
-                  <button onClick={() => { setMode('signup'); setError(''); }} className="text-gray-500 hover:text-amber-800 hover:underline">
-                    First time? Create owner account →
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => { setMode('signup'); setError(''); }}
+                  className="text-gray-500 hover:text-amber-800 hover:underline block w-full pt-1"
+                >
+                  First time? Set up owner account →
+                </button>
               </>
             )}
             {(mode === 'signup' || mode === 'forgot') && (
-              <button onClick={() => { setMode('signin'); setError(''); }} className="text-amber-700 hover:underline">
+              <button type="button" onClick={() => { setMode('signin'); setError(''); }} className="text-amber-700 hover:underline">
                 ← Back to Sign In
               </button>
             )}
