@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Sparkles, ShieldCheck } from 'lucide-react';
@@ -8,77 +8,32 @@ import { useAuthStore } from '../store';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
-type Mode = 'signin' | 'signup' | 'forgot';
-
 export default function Login() {
-  const [mode, setMode] = useState<Mode>('signin');
-  const [form, setForm] = useState({ email: '', password: '', name: 'Munna Readymade Garments Owner', confirmPassword: '' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [ownerInitialized, setOwnerInitialized] = useState<boolean>(true);
   const [error, setError] = useState('');
   const { login } = useAuthStore();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    authApi.isInitialized().then(res => {
-      setOwnerInitialized(res.data.initialized);
-    }).catch(() => {});
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (mode === 'forgot') {
-      if (!form.email.trim()) { setError('Enter your email address'); return; }
-      setLoading(true);
-      try {
-        await authApi.sendPasswordReset(form.email.trim());
-        toast.success('Password reset email sent! Check your inbox.');
-        setMode('signin');
-      } catch (err: any) {
-        setError(err.message || 'Failed to send reset email');
-        toast.error(err.message || 'Failed to send reset email');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
     if (!form.email.trim() || !form.password.trim()) {
       setError('Please enter your email and password');
-      return;
-    }
-    if (mode === 'signup' && form.password !== form.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-    if (mode === 'signup' && form.password.length < 8) {
-      setError('Password must be at least 8 characters');
       return;
     }
 
     setLoading(true);
     try {
-      if (mode === 'signup') {
-        const res = await authApi.setupInitial({
-          email: form.email.trim(),
-          password: form.password.trim(),
-          name: form.name || 'Munna Readymade Garments Owner',
-        });
-        login(res.data.user, res.data.token);
-        toast.success(`Welcome, ${res.data.user.name}! Owner account created.`);
-        navigate('/dashboard');
-      } else {
-        const res = await authApi.login({
-          email: form.email.trim(),
-          password: form.password.trim(),
-        });
-        login(res.data.user, res.data.token);
-        toast.success(`Welcome back, ${res.data.user.name || 'Owner'}!`);
-        navigate('/dashboard');
-      }
+      const res = await authApi.login({
+        email: form.email.trim(),
+        password: form.password.trim(),
+      });
+      login(res.data.user, res.data.token);
+      toast.success(`Welcome back, ${res.data.user.name || 'Owner'}!`);
+      navigate('/dashboard');
     } catch (err: any) {
       const msg = err.message || 'Authentication failed. Please check your credentials.';
       setError(msg);
@@ -175,31 +130,13 @@ export default function Login() {
               <ShieldCheck className="text-amber-700" size={20} />
               <span className="text-xs font-bold tracking-widest text-amber-800 uppercase">Shop Administration</span>
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900">
-              {mode === 'forgot' ? 'Reset Password'
-                : mode === 'signup' ? 'Create Owner Account'
-                : 'Owner Sign In'}
-            </h2>
+            <h2 className="text-2xl font-semibold text-gray-900">Owner Sign In</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              {mode === 'forgot'
-                ? 'Enter your email to receive a password reset link'
-                : mode === 'signup'
-                ? 'Create the primary Owner credentials for Munna Garments'
-                : 'Enter your credentials to access POS billing and inventory'}
+              Enter your credentials to access POS billing, inventory, and management
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'signup' && (
-              <Input
-                label="Owner Name"
-                placeholder="Munna Garments Owner"
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                required
-              />
-            )}
-
             <Input
               label="Email Address"
               type="email"
@@ -211,34 +148,20 @@ export default function Login() {
               required
             />
 
-            {mode !== 'forgot' && (
-              <Input
-                label="Password"
-                type={showPwd ? 'text' : 'password'}
-                placeholder={mode === 'signup' ? 'Min 8 characters' : 'Enter your password'}
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                required
-                rightElement={
-                  <button type="button" onClick={() => setShowPwd(!showPwd)} className="p-1" style={{ color: '#B5A896' }}>
-                    {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                }
-              />
-            )}
-
-            {mode === 'signup' && (
-              <Input
-                label="Confirm Password"
-                type={showPwd ? 'text' : 'password'}
-                placeholder="Re-enter password"
-                value={form.confirmPassword}
-                onChange={e => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
-                autoComplete="new-password"
-                required
-              />
-            )}
+            <Input
+              label="Password"
+              type={showPwd ? 'text' : 'password'}
+              placeholder="Enter your password"
+              value={form.password}
+              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              autoComplete="current-password"
+              required
+              rightElement={
+                <button type="button" onClick={() => setShowPwd(!showPwd)} className="p-1" style={{ color: '#B5A896' }}>
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              }
+            />
 
             {error && (
               <motion.div
@@ -252,35 +175,11 @@ export default function Login() {
             )}
 
             <Button type="submit" className="w-full" size="lg" loading={loading} icon={<Sparkles size={16} />}>
-              {mode === 'forgot' ? 'Send Reset Link'
-                : mode === 'signup' ? 'Create Owner Account'
-                : 'Sign In as Owner'}
+              Sign In as Owner
             </Button>
           </form>
 
-          <div className="mt-5 space-y-2 text-center text-xs">
-            {mode === 'signin' && (
-              <>
-                <button type="button" onClick={() => { setMode('forgot'); setError(''); }} className="text-amber-700 hover:underline block w-full">
-                  Forgot password?
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMode('signup'); setError(''); }}
-                  className="text-gray-500 hover:text-amber-800 hover:underline block w-full pt-1"
-                >
-                  First time? Set up owner account →
-                </button>
-              </>
-            )}
-            {(mode === 'signup' || mode === 'forgot') && (
-              <button type="button" onClick={() => { setMode('signin'); setError(''); }} className="text-amber-700 hover:underline">
-                ← Back to Sign In
-              </button>
-            )}
-          </div>
-
-          <div className="mt-6 text-center">
+          <div className="mt-8 text-center">
             <button
               onClick={() => navigate('/catalogue')}
               className="text-xs text-amber-800 font-semibold hover:underline"
