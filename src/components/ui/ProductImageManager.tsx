@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Image as ImageIcon, Plus, Trash2, Star, ArrowUp, ArrowDown, ExternalLink, AlertCircle } from 'lucide-react';
+import { Image as ImageIcon, Plus, Trash2, Star, ArrowUp, ArrowDown, ExternalLink, AlertCircle, CheckCircle } from 'lucide-react';
 import Button from './Button';
 import Input from './Input';
+import { cleanImageUrl } from '../../utils/productImages';
 
 interface ProductImageManagerProps {
   images: string[];
@@ -27,28 +28,50 @@ export default function ProductImageManager({
     }
   };
 
-  const handleAdd = () => {
-    const trimmed = urlInput.trim();
-    if (!trimmed) return;
+  const addUrl = (rawUrl: string) => {
+    const cleaned = cleanImageUrl(rawUrl.trim());
+    if (!cleaned) return false;
 
-    if (!isValidUrl(trimmed)) {
+    if (!isValidUrl(cleaned)) {
       alert('Please enter a valid HTTP or HTTPS image URL.');
-      return;
+      return false;
     }
 
-    if (images.includes(trimmed)) {
+    if (images.includes(cleaned)) {
       alert('This image URL has already been added.');
-      return;
+      return false;
     }
 
     if (images.length >= maxImages) {
       alert(`Maximum of ${maxImages} images allowed per product.`);
-      return;
+      return false;
     }
 
-    onChange([...images, trimmed]);
+    onChange([...images, cleaned]);
     setUrlInput('');
     setPreviewError(false);
+    return true;
+  };
+
+  const handleAdd = () => {
+    if (!urlInput.trim()) return;
+    addUrl(urlInput);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text').trim();
+    if (isValidUrl(pasted) && !images.includes(pasted) && images.length < maxImages) {
+      // Auto-add on paste for seamless UX
+      e.preventDefault();
+      addUrl(pasted);
+    }
+  };
+
+  const handleBlur = () => {
+    // If user typed/pasted a valid URL and moved to the next field without clicking Add
+    if (urlInput.trim() && isValidUrl(urlInput.trim()) && !images.includes(urlInput.trim()) && images.length < maxImages) {
+      addUrl(urlInput);
+    }
   };
 
   const handleRemove = (index: number) => {
@@ -85,21 +108,24 @@ export default function ProductImageManager({
           <ImageIcon size={14} className="text-amber-700" />
           Product Images (Web URL System)
         </label>
-        <span className="text-[11px] text-gray-400">
-          {images.length}/{maxImages} images
+        <span className="text-[11px] text-gray-400 font-medium">
+          {images.length}/{maxImages} images attached
         </span>
       </div>
 
       {/* URL Input Box */}
       <div className="flex gap-2">
         <div className="flex-1">
-          <Input
+          <input
             value={urlInput}
             onChange={e => {
               setUrlInput(e.target.value);
               setPreviewError(false);
             }}
-            placeholder="Paste image URL (e.g. https://example.com/shirt.jpg)"
+            onPaste={handlePaste}
+            onBlur={handleBlur}
+            placeholder="Paste image URL (e.g. https://i.ibb.co/xyz/shirt.jpg)"
+            className="w-full py-2 px-3 text-sm rounded-xl border border-gray-200 outline-none focus:border-amber-600 focus:bg-white transition-all"
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -119,37 +145,47 @@ export default function ProductImageManager({
         </Button>
       </div>
 
-      {/* Live Preview for currently typed URL */}
+      {/* Live Preview for currently typed URL before adding */}
       {urlInput.trim() && isValidUrl(urlInput.trim()) && (
-        <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-center gap-3">
-          <div className="w-14 h-14 rounded-lg bg-white border border-amber-200 overflow-hidden flex items-center justify-center flex-shrink-0">
-            {previewError ? (
-              <div className="text-center p-1">
-                <AlertCircle size={16} className="text-red-500 mx-auto" />
-                <span className="text-[9px] text-red-500 block leading-tight">Failed</span>
-              </div>
-            ) : (
-              <img
-                src={urlInput.trim()}
-                alt="URL Preview"
-                className="w-full h-full object-cover"
-                onError={() => setPreviewError(true)}
-              />
-            )}
+        <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-14 h-14 rounded-lg bg-white border border-amber-200 overflow-hidden flex items-center justify-center flex-shrink-0">
+              {previewError ? (
+                <div className="text-center p-1">
+                  <AlertCircle size={16} className="text-red-500 mx-auto" />
+                  <span className="text-[9px] text-red-500 block leading-tight">Failed</span>
+                </div>
+              ) : (
+                <img
+                  src={cleanImageUrl(urlInput.trim())}
+                  alt="URL Preview"
+                  className="w-full h-full object-cover"
+                  onError={() => setPreviewError(true)}
+                />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-gray-800">Preview Before Adding</p>
+              <p className="text-[11px] text-gray-500 truncate max-w-xs">{urlInput.trim()}</p>
+              {previewError && (
+                <p className="text-[10px] text-red-600 mt-0.5">
+                  Could not load image. Check the URL and verify it is public.
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-gray-800">Preview Before Adding</p>
-            <p className="text-[11px] text-gray-500 truncate">{urlInput.trim()}</p>
-            {previewError && (
-              <p className="text-[10px] text-red-600 mt-0.5">
-                Could not load image from this URL. Please verify the link is accessible.
-              </p>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="px-3 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-lg text-xs font-semibold shadow-xs flex-shrink-0 flex items-center gap-1 transition-colors"
+          >
+            <CheckCircle size={12} />
+            Attach Image
+          </button>
         </div>
       )}
 
-      {/* Image Gallery / Thumbnails List */}
+      {/* Image Gallery / Attached Thumbnails List */}
       {images.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {images.map((imgUrl, idx) => {
@@ -161,7 +197,7 @@ export default function ProductImageManager({
                 key={idx}
                 className={`p-2 rounded-xl border flex items-center gap-3 transition-all ${
                   isPrimary
-                    ? 'bg-amber-50/80 border-amber-300 shadow-xs'
+                    ? 'bg-amber-50/80 border-amber-300 shadow-xs ring-1 ring-amber-300/50'
                     : 'bg-white border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -170,7 +206,7 @@ export default function ProductImageManager({
                   {isFailed ? (
                     <div className="text-center p-1">
                       <AlertCircle size={16} className="text-gray-400 mx-auto" />
-                      <span className="text-[8px] text-gray-400 block leading-tight">Broken</span>
+                      <span className="text-[8px] text-gray-400 block leading-tight">Broken Link</span>
                     </div>
                   ) : (
                     <img
@@ -193,7 +229,7 @@ export default function ProductImageManager({
                 {/* Details & Actions */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium text-gray-800">
+                    <span className="text-xs font-semibold text-gray-800">
                       {isPrimary ? 'Primary Photo' : `Photo #${idx + 1}`}
                     </span>
                     <a
@@ -254,15 +290,14 @@ export default function ProductImageManager({
           })}
         </div>
       ) : (
-        <div className="py-4 px-3 rounded-xl border border-dashed border-gray-200 text-center bg-gray-50/50">
-          <ImageIcon size={22} className="mx-auto text-gray-400 mb-1" />
-          <p className="text-xs text-gray-500 font-medium">No product images added yet</p>
+        <div className="py-4 px-3 rounded-xl border border-dashed border-amber-200/80 text-center bg-amber-50/30">
+          <ImageIcon size={22} className="mx-auto text-amber-700/50 mb-1" />
+          <p className="text-xs text-gray-600 font-medium">No product images attached yet</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Paste any publicly accessible image URL above to preview and attach.
+            Paste any direct image URL above (ImgBB, Postimages, etc.) to preview and attach.
           </p>
         </div>
       )}
     </div>
   );
 }
-

@@ -11,7 +11,7 @@ import Input from '../../components/ui/Input';
 import EmptyState from '../../components/ui/EmptyState';
 import { SkeletonTable } from '../../components/ui/Skeleton';
 import ProductImageManager from '../../components/ui/ProductImageManager';
-import { getProductDisplayImage } from '../../utils/productImages';
+import { getProductImageUrl } from '../../utils/productImages';
 import toast from 'react-hot-toast';
 
 export default function Products() {
@@ -323,12 +323,21 @@ export default function Products() {
                   <tr key={p.id} className="hover:bg-amber-50/20 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        <img
-                          src={getProductDisplayImage(p)}
-                          alt={p.name}
-                          className="w-10 h-10 rounded-xl object-cover border border-amber-200 shadow-xs flex-shrink-0"
-                          loading="lazy"
-                        />
+                        {getProductImageUrl(p) ? (
+                          <img
+                            src={getProductImageUrl(p)!}
+                            alt={p.name}
+                            className="w-10 h-10 rounded-xl object-cover border border-amber-200 shadow-xs flex-shrink-0"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-amber-100/70 border border-amber-200 text-amber-900 font-bold flex items-center justify-center text-xs flex-shrink-0 select-none">
+                            {(p.name || 'MG').slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <p className="font-semibold text-gray-800">{p.name}</p>
                           <p className="text-xs text-gray-400">{p.brand || 'Munna Collection'}</p>

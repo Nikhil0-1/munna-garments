@@ -717,8 +717,7 @@ export async function getProducts(params?: { search?: string; category?: string;
     if (cached) {
       try {
         products = JSON.parse(cached);
-        // Automatically sync with rich default catalog if previous cached list had only 3 items
-        if (products.length < DEFAULT_PRODUCTS.length) {
+        if (!Array.isArray(products) || products.length === 0) {
           products = DEFAULT_PRODUCTS;
           localStorage.setItem('mrg_local_products', JSON.stringify(products));
         }
@@ -730,6 +729,15 @@ export async function getProducts(params?: { search?: string; category?: string;
       localStorage.setItem('mrg_local_products', JSON.stringify(products));
     }
   }
+
+  // Deduplicate products by unique id
+  const seenIds = new Set<string>();
+  products = products.filter(p => {
+    const idKey = String(p.id || p.sku || '');
+    if (!idKey || seenIds.has(idKey)) return false;
+    seenIds.add(idKey);
+    return true;
+  });
 
   // Archive status filtering (default to active only)
   if (params?.status === 'archived') {
@@ -850,26 +858,30 @@ export async function createProduct(data: any) {
     await batch.commit();
   } catch (e: any) {
     console.warn('Firestore write failed, saving locally:', e);
-    // Always persist to local cache so data is never lost
+    // Persist to local cache only if not already saved
     try {
       const cached = localStorage.getItem('mrg_local_products');
-      let list = cached ? JSON.parse(cached) : [...DEFAULT_PRODUCTS];
-      list.unshift({ id: prodId, ...productData });
-      localStorage.setItem('mrg_local_products', JSON.stringify(list));
+      let list: any[] = cached ? JSON.parse(cached) : [...DEFAULT_PRODUCTS];
+      if (!list.some(p => p.id === prodId)) {
+        list.unshift({ id: prodId, ...productData });
+        localStorage.setItem('mrg_local_products', JSON.stringify(list));
+      }
     } catch {}
 
     if (e.code === 'permission-denied' || e.message?.includes('permission')) {
-      throw new Error('Firebase Permission Error: Please log out and log in again with Owner credentials.');
+      throw new Error('Firebase Permission Error: Please log out and log in again with Owner credentials, or verify Firestore rules are published.');
     }
     throw e;
   }
 
-  // Always save to persistent local store
+  // Update local cache without creating duplicates
   try {
     const cached = localStorage.getItem('mrg_local_products');
-    let list = cached ? JSON.parse(cached) : [...DEFAULT_PRODUCTS];
-    list.unshift({ id: prodId, ...productData });
-    localStorage.setItem('mrg_local_products', JSON.stringify(list));
+    let list: any[] = cached ? JSON.parse(cached) : [...DEFAULT_PRODUCTS];
+    if (!list.some(p => p.id === prodId)) {
+      list.unshift({ id: prodId, ...productData });
+      localStorage.setItem('mrg_local_products', JSON.stringify(list));
+    }
   } catch {}
 
   // Record initial stock movements

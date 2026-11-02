@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { catalogueApi } from '../../api';
 import { formatCurrency } from '../../utils';
-import { getGarmentCategoryFallback, cleanImageUrl } from '../../utils/productImages';
+import { getProductImageUrl, cleanImageUrl } from '../../utils/productImages';
 import Button from '../../components/ui/Button';
 
 export default function CatalogueProductDetail() {
@@ -77,12 +77,12 @@ export default function CatalogueProductDetail() {
     );
   }
 
-  const fallbackImage = getGarmentCategoryFallback(product.name, product.category_name);
+  // Get raw images or fallback to empty array (never Unsplash stock photos)
   const rawImages: string[] = Array.isArray(product.images) && product.images.length > 0
     ? product.images
-    : (product.image_url ? [product.image_url] : [fallbackImage]);
-  const images = rawImages.map(img => cleanImageUrl(img));
-  const currentImage = images[selectedImageIndex] || fallbackImage;
+    : (product.image_url ? [product.image_url] : (product.imageUrl ? [product.imageUrl] : []));
+  const images = rawImages.map(img => cleanImageUrl(img)).filter(Boolean);
+  const currentImage = images[selectedImageIndex] || null;
   const sellingPrice = Number(product.selling_price) || 0;
   const mrp = Number(product.mrp) || 0;
   const hasDiscount = mrp > sellingPrice;
@@ -174,11 +174,11 @@ export default function CatalogueProductDetail() {
                   onError={() => setImageError(true)}
                 />
               ) : (
-                <div className="text-center p-6">
+                <div className="text-center p-6 select-none">
                   <span className="font-serif text-6xl font-bold text-amber-900/20 uppercase tracking-widest block mb-2">
                     {product.name ? product.name.slice(0, 2) : 'MRG'}
                   </span>
-                  <p className="text-xs font-medium text-amber-900/50">Munna Readymade Garments</p>
+                  <p className="text-xs font-semibold text-amber-900/50">Munna Readymade Garments</p>
                   <p className="text-[11px] text-gray-400 mt-1">Dhobwal Bazzar Collection</p>
                 </div>
               )}

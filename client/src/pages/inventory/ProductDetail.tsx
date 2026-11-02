@@ -33,9 +33,9 @@ export default function ProductDetail() {
     setLoading(true);
     try {
       const [pRes, cRes, lRes] = await Promise.all([
-        productsApi.get(Number(id)),
+        productsApi.get(id),
         categoriesApi.list(),
-        productsApi.ledger(Number(id)),
+        productsApi.ledger(id),
       ]);
       setProduct(pRes.data);
       setCategories(cRes.data);
@@ -71,11 +71,12 @@ export default function ProductDetail() {
   }, [product]);
 
   const handleRegenerateBarcode = async () => {
+    if (!id) return;
     setRegeneratingBarcode(true);
     try {
       const res = await productsApi.generateBarcode('MRG');
       const updated = { ...product, barcode: res.data.barcode };
-      await productsApi.update(Number(id), updated);
+      await productsApi.update(id, updated);
       setProduct(updated);
       toast.success(`New Barcode Assigned: ${res.data.barcode}`);
     } catch {
@@ -87,18 +88,20 @@ export default function ProductDetail() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!id) return;
     setSaving(true);
     try {
-      await productsApi.update(Number(id), product);
+      await productsApi.update(id, product);
       toast.success('Product updated successfully');
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed');
+      toast.error(err.response?.data?.error || err.message || 'Update failed');
     } finally {
       setSaving(false);
     }
   };
 
   const handleAddVariant = async () => {
+    if (!id) return;
     if (!newVariant.size && !newVariant.color) {
       toast.error('Specify size or color');
       return;
@@ -109,7 +112,7 @@ export default function ProductDetail() {
         selling_price: newVariant.selling_price || product.selling_price,
         purchase_price: newVariant.purchase_price || product.purchase_price,
       }];
-      await productsApi.update(Number(id), { ...product, variants: updatedVariants });
+      await productsApi.update(id, { ...product, variants: updatedVariants });
       toast.success('Variant added');
       setShowAddVariant(false);
       setNewVariant({ size: '', color: '', stock: 0, purchase_price: 0, selling_price: 0 });
@@ -236,11 +239,22 @@ export default function ProductDetail() {
           <div className="space-y-6">
             {/* Product Images (Web URL System) */}
             <Card>
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Product Images (Web URL System)</h3>
-              <p className="text-xs text-gray-500 mb-3">Add image URLs from ImgBB, Postimages, or any web link. First photo is used on the public showroom.</p>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Product Images (Web URL System)</h3>
+              <p className="text-xs text-gray-500 mb-3">Add image URLs from ImgBB, Postimages, or any web link. The first photo is displayed on the public showroom.</p>
               <ProductImageManager
                 images={product.images || []}
-                onChange={(images) => setProduct({ ...product, images })}
+                onChange={async (newImages) => {
+                  const updated = { ...product, images: newImages };
+                  setProduct(updated);
+                  if (id) {
+                    try {
+                      await productsApi.update(id, updated);
+                      toast.success('Images updated');
+                    } catch {
+                      toast.error('Failed to save image changes');
+                    }
+                  }
+                }}
                 maxImages={6}
               />
             </Card>
@@ -275,23 +289,6 @@ export default function ProductDetail() {
                 </Button>
               </div>
             </Card>
-
-            {/* Product Image Manager Card */}
-            <Card>
-              <ProductImageManager
-                images={product.images || []}
-                onChange={async (newImages) => {
-                  const updated = { ...product, images: newImages };
-                  setProduct(updated);
-                  try {
-                    await productsApi.update(Number(id), updated);
-                    toast.success('Images updated successfully');
-                  } catch {
-                    toast.error('Failed to save image changes');
-                  }
-                }}
-              />
-            </Card>
           </div>
         </div>
       )}
@@ -315,8 +312,8 @@ export default function ProductDetail() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {product.variants?.map((v: any) => (
-                <tr key={v.id} className="hover:bg-amber-50/20">
+              {product.variants?.map((v: any, vIdx: number) => (
+                <tr key={v.id || vIdx} className="hover:bg-amber-50/20">
                   <td className="py-2.5 px-4 font-bold text-gray-800">{v.size || 'Free Size'}</td>
                   <td className="py-2.5 px-4 text-gray-600">{v.color || 'Standard'}</td>
                   <td className="py-2.5 px-4 font-mono text-xs text-gray-500">{v.variant_sku || '-'}</td>
@@ -350,9 +347,9 @@ export default function ProductDetail() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ledger.map((m: any) => (
-                <tr key={m.id} className="hover:bg-amber-50/20">
-                  <td className="py-2.5 px-4 text-xs text-gray-500">{formatDate(m.created_at)}</td>
+              {ledger.map((m: any, mIdx: number) => (
+                <tr key={m.id || mIdx} className="hover:bg-amber-50/20">
+                  <td className="py-2.5 px-4 text-xs text-gray-500">{formatDate(m.created_at || m.timestamp)}</td>
                   <td className="py-2.5 px-4">
                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${m.type.includes('Sale') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
                       {m.type}
