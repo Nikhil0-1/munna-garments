@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2, Plus, Barcode, History, Image as ImageIcon, Sparkles, Upload, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Plus, Barcode, History, Image as ImageIcon, Sparkles } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { productsApi, categoriesApi } from '../../api';
 import { formatCurrency, formatDate } from '../../utils';
@@ -9,6 +9,7 @@ import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { SkeletonCard } from '../../components/ui/Skeleton';
+import ProductImageManager from '../../components/ui/ProductImageManager';
 import toast from 'react-hot-toast';
 
 export default function ProductDetail() {
@@ -25,10 +26,7 @@ export default function ProductDetail() {
   const [showAddVariant, setShowAddVariant] = useState(false);
 
   const barcodeRef = useRef<SVGSVGElement | null>(null);
-  const imageUploadRef = useRef<HTMLInputElement>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [regeneratingBarcode, setRegeneratingBarcode] = useState(false);
-  const [imageLinkInput, setImageLinkInput] = useState('');
 
   const fetchProduct = async () => {
     if (!id) return;
@@ -84,54 +82,6 @@ export default function ProductDetail() {
       toast.error('Failed to regenerate barcode');
     } finally {
       setRegeneratingBarcode(false);
-    }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingImage(true);
-    try {
-      const res = await productsApi.uploadImage(file, String(id));
-      const currentImages = product.images || [];
-      const updated = { ...product, images: [res.data.url, ...currentImages] };
-      await productsApi.update(Number(id), updated);
-      setProduct(updated);
-      toast.success('Garment image saved successfully');
-    } catch {
-      toast.error('Failed to upload image');
-    } finally {
-      setUploadingImage(false);
-      if (imageUploadRef.current) imageUploadRef.current.value = '';
-    }
-  };
-
-  const handleAddImageLink = async () => {
-    if (!imageLinkInput.trim()) {
-      toast.error('Please enter an image link');
-      return;
-    }
-    try {
-      const currentImages = product.images || [];
-      const updated = { ...product, images: [imageLinkInput.trim(), ...currentImages] };
-      await productsApi.update(Number(id), updated);
-      setProduct(updated);
-      setImageLinkInput('');
-      toast.success('Image link add ho gaya!');
-    } catch {
-      toast.error('Failed to add image link');
-    }
-  };
-
-  const handleRemoveImage = async (indexToRemove: number) => {
-    try {
-      const updatedImages = product.images.filter((_: any, i: number) => i !== indexToRemove);
-      const updated = { ...product, images: updatedImages };
-      await productsApi.update(Number(id), updated);
-      setProduct(updated);
-      toast.success('Photo removed');
-    } catch {
-      toast.error('Failed to remove image');
     }
   };
 
@@ -315,71 +265,21 @@ export default function ProductDetail() {
               </div>
             </Card>
 
-            {/* Product Image Gallery Card */}
+            {/* Product Image Manager Card */}
             <Card>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-800">Product Images</h3>
-                <input
-                  type="file"
-                  ref={imageUploadRef}
-                  onChange={handleImageUpload}
-                  accept="image/*"
-                  className="hidden"
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => imageUploadRef.current?.click()}
-                  loading={uploadingImage}
-                  icon={<Upload size={13} />}
-                >
-                  Upload
-                </Button>
-              </div>
-              {product.images && product.images.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  {product.images.map((img: string, idx: number) => (
-                    <div key={idx} className="relative rounded-xl overflow-hidden border border-gray-200 aspect-square group">
-                      <img src={img} alt="" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(idx)}
-                        className="absolute top-1.5 right-1.5 p-1 bg-red-600/80 hover:bg-red-700 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Remove photo"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  onClick={() => imageUploadRef.current?.click()}
-                  className="py-6 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-amber-400 cursor-pointer transition-colors mb-3"
-                >
-                  <ImageIcon size={26} className="mb-1 text-gray-300" />
-                  <span className="text-xs">Device se photo select karein</span>
-                </div>
-              )}
-
-              {/* Add image by URL link */}
-              <div className="pt-2 border-t border-gray-100">
-                <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                  🔗 Image Link / URL se Add Karein:
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="https://example.com/photo.jpg"
-                    value={imageLinkInput}
-                    onChange={e => setImageLinkInput(e.target.value)}
-                    className="flex-1 py-1.5 px-2.5 text-xs bg-gray-50/50 rounded-lg border border-gray-200 outline-none focus:border-amber-600 font-mono"
-                  />
-                  <Button type="button" size="sm" variant="outline" onClick={handleAddImageLink}>
-                    Add Link
-                  </Button>
-                </div>
-              </div>
+              <ProductImageManager
+                images={product.images || []}
+                onChange={async (newImages) => {
+                  const updated = { ...product, images: newImages };
+                  setProduct(updated);
+                  try {
+                    await productsApi.update(Number(id), updated);
+                    toast.success('Images updated successfully');
+                  } catch {
+                    toast.error('Failed to save image changes');
+                  }
+                }}
+              />
             </Card>
           </div>
         </div>

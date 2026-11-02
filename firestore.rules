@@ -2,35 +2,42 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper: is the request from an authenticated owner? ──────────────────
-    // The frontend stores the Firebase UID as the "token" in Zustand.
-    // All private data operations require Firebase Auth.
+    // ── Helper: is the request from an authenticated user? ────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // ── 1. PUBLIC DIGITAL SHOWROOM ───────────────────────────────────────────
-    // Anyone can read catalogue/shop-info. Only authenticated owners can write.
+    // ── Helper: check if user is verified active Owner in /users/{uid} ─────────
+    function isOwner() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+
+    // ── 1. PUBLIC DIGITAL CATALOGUE & SHOWROOM ─────────────────────────────────
+    // Public visitors (unauthenticated) can READ published catalogue items.
+    // Strictly ONLY the verified shop owner can publish or modify catalogue data.
     match /publicCatalogue/{document=**} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isOwner();
     }
 
-    // ── 2. PRIVATE SHOP DATA (POS, Inventory, Billing, Ledgers) ─────────────
-    // Only authenticated users (owner/admins logged in via Firebase Auth) may
-    // read or write private business records.
+    // ── 2. PRIVATE SHOP DATA (Strictly Owner-Only) ─────────────────────────────
+    // Sales, Sale Items, Purchases, Purchase Items, Customers, Suppliers,
+    // Expenses, Payments, Ledgers, Inventory, Stock Movements, Invoices, Settings.
     match /privateShopData/{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isOwner();
     }
 
-    // ── 3. USER ACCOUNTS ─────────────────────────────────────────────────────
+    // ── 3. USER PROFILES ───────────────────────────────────────────────────────
     // A user may only read/write their own profile document.
     match /users/{uid} {
-      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow write: if isAuthenticated() && request.auth.uid == uid;
     }
 
-    // ── 4. DEFAULT DENY ──────────────────────────────────────────────────────
-    // Any collection not matched above is denied.
+    // ── 4. DEFAULT DENY ────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

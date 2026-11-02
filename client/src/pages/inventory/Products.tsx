@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, Download, Edit, Trash2, Eye, Package, Tag, ArrowUpDown, Barcode, Image as ImageIcon, Sparkles, Archive, RotateCcw, Copy, RefreshCw } from 'lucide-react';
+import { Plus, Search, Filter, Download, Edit, Trash2, Eye, Package, Tag, ArrowUpDown, Barcode, Sparkles, Archive, RotateCcw, Copy, RefreshCw } from 'lucide-react';
 import { productsApi, categoriesApi, exportApi } from '../../api';
 import { formatCurrency, downloadBlob } from '../../utils';
 import Button from '../../components/ui/Button';
@@ -10,6 +10,7 @@ import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import EmptyState from '../../components/ui/EmptyState';
 import { SkeletonTable } from '../../components/ui/Skeleton';
+import ProductImageManager from '../../components/ui/ProductImageManager';
 import toast from 'react-hot-toast';
 
 export default function Products() {
@@ -27,14 +28,11 @@ export default function Products() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newProd, setNewProd] = useState<any>({
     name: '', sku: '', barcode: '', category_id: '', brand: '', fabric: '',
     gender: 'Men', gst_rate: 5, mrp: '', purchase_price: '', selling_price: '',
-    min_stock: 5, description: '', variants: [{ size: 'M', color: '', stock: 10, purchase_price: '', selling_price: '' }]
+    min_stock: 5, description: '', images: [], variants: [{ size: 'M', color: '', stock: 10, purchase_price: '', selling_price: '' }]
   });
 
   const navigate = useNavigate();
@@ -98,14 +96,6 @@ export default function Products() {
     }
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
-  };
-
   const addVariantRow = () => {
     setNewProd({
       ...newProd,
@@ -137,31 +127,17 @@ export default function Products() {
 
     setSaving(true);
     try {
-      const tempId = `prod_${Date.now()}`;
-      let uploadedUrls: string[] = [];
-
-      if (imageFile) {
-        toast.loading('Processing product image...', { id: 'upload-img' });
-        const upRes = await productsApi.uploadImage(imageFile, tempId);
-        uploadedUrls.push(upRes.data.url);
-        toast.success('Image saved successfully', { id: 'upload-img' });
-      } else if (imagePreview && (imagePreview.startsWith('http://') || imagePreview.startsWith('https://') || imagePreview.startsWith('data:'))) {
-        uploadedUrls.push(imagePreview);
-      }
-
       await productsApi.create({
         ...newProd,
-        images: uploadedUrls.length > 0 ? uploadedUrls : (newProd.images || []),
+        images: newProd.images || [],
       });
 
       toast.success('Product created successfully');
       setShowAddModal(false);
-      setImageFile(null);
-      setImagePreview('');
       setNewProd({
         name: '', sku: '', barcode: '', category_id: '', brand: '', fabric: '',
         gender: 'Men', gst_rate: 5, mrp: '', purchase_price: '', selling_price: '',
-        min_stock: 5, description: '', variants: [{ size: 'M', color: '', stock: 10, purchase_price: '', selling_price: '' }]
+        min_stock: 5, description: '', images: [], variants: [{ size: 'M', color: '', stock: 10, purchase_price: '', selling_price: '' }]
       });
       fetchProducts();
     } catch (err: any) {
@@ -431,64 +407,10 @@ export default function Products() {
       {/* Add Product Modal */}
       <Modal open={showAddModal} onClose={() => setShowAddModal(false)} title="Add New Garment Product" size="lg">
         <form onSubmit={handleSaveProduct} className="space-y-4">
-          {/* Photo upload & Web Link section (100% Free - Zero Firebase Storage cost) */}
-          <div className="space-y-3 p-3 border border-amber-100 bg-amber-50/30 rounded-xl">
-            <div className="flex gap-4 items-center">
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="w-20 h-20 rounded-xl border-2 border-dashed border-amber-300 hover:border-amber-500 bg-white flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all shrink-0"
-              >
-                {imagePreview ? (
-                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="flex flex-col items-center text-amber-700/70 p-1 text-center">
-                    <ImageIcon size={20} />
-                    <span className="text-[10px] font-medium mt-1 leading-tight">Add Photo</span>
-                  </div>
-                )}
-              </div>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageSelect}
-                accept="image/*"
-                className="hidden"
-              />
-              <div className="flex-1 space-y-1">
-                <p className="text-xs font-semibold text-gray-800">Garment Image (100% Free — Zero Storage Fee)</p>
-                <p className="text-[11px] text-gray-500">Device se photo select karein (auto-compressed) ya neeche direct web image link paste karein.</p>
-                {imagePreview && (
-                  <button
-                    type="button"
-                    onClick={() => { setImageFile(null); setImagePreview(''); }}
-                    className="text-xs text-red-500 hover:underline font-medium"
-                  >
-                    Remove photo
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Direct Image URL Link Input */}
-            <div className="pt-2 border-t border-amber-200/50">
-              <label className="text-[11px] font-semibold text-amber-900 block mb-1">
-                🔗 Ya Direct Image URL / Link Paste Karein (Imgur, Cloudinary, WhatsApp, Google):
-              </label>
-              <input
-                type="url"
-                placeholder="https://images.unsplash.com/... or https://i.imgur.com/..."
-                value={imagePreview && !imageFile ? imagePreview : ''}
-                onChange={e => {
-                  const url = e.target.value.trim();
-                  setImagePreview(url);
-                  if (url) {
-                    setImageFile(null);
-                  }
-                }}
-                className="w-full py-1.5 px-2.5 text-xs bg-white rounded-lg border border-amber-200 outline-none focus:border-amber-600 font-mono"
-              />
-            </div>
-          </div>
+          <ProductImageManager
+            images={newProd.images || []}
+            onChange={imgs => setNewProd({ ...newProd, images: imgs })}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <Input label="Product Name *" value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="e.g. Cotton Kurta Set" required />

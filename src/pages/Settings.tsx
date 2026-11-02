@@ -51,6 +51,10 @@ export default function Settings() {
       toast.error('New passwords do not match');
       return;
     }
+    if (passwords.newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
     setChangingPass(true);
     try {
       await authApi.changePassword({
@@ -60,9 +64,21 @@ export default function Settings() {
       toast.success('Password changed successfully');
       setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Password update failed');
+      toast.error(err.message || 'Password update failed — please check your current password');
     } finally {
       setChangingPass(false);
+    }
+  };
+
+  const handleSendResetEmail = async () => {
+    const user = (await import('../store')).useAuthStore.getState().user;
+    const email = user?.email || '';
+    if (!email) { toast.error('No email found. Please sign out and use Forgot Password on the login page.'); return; }
+    try {
+      await authApi.sendPasswordReset(email);
+      toast.success(`Password reset email sent to ${email}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send reset email');
     }
   };
 
@@ -282,7 +298,7 @@ export default function Settings() {
       )}
 
       {activeTab === 'password' && (
-        <div className="max-w-md">
+        <div className="max-w-md space-y-4">
           <Card>
             <form onSubmit={handleChangePassword} className="space-y-4">
               <Input
@@ -293,7 +309,7 @@ export default function Settings() {
                 required
               />
               <Input
-                label="New Password *"
+                label="New Password * (min 8 characters)"
                 type="password"
                 value={passwords.newPassword}
                 onChange={e => setPasswords({ ...passwords, newPassword: e.target.value })}
@@ -306,10 +322,17 @@ export default function Settings() {
                 onChange={e => setPasswords({ ...passwords, confirmPassword: e.target.value })}
                 required
               />
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
                 <Button type="submit" loading={changingPass} className="w-full" icon={<Key size={15} />}>
-                  Update Admin Password
+                  Update Password
                 </Button>
+                <button
+                  type="button"
+                  onClick={handleSendResetEmail}
+                  className="w-full text-xs text-amber-700 hover:underline text-center py-1"
+                >
+                  Forgot current password? Send reset email →
+                </button>
               </div>
             </form>
           </Card>

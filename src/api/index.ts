@@ -25,16 +25,15 @@ export const authApi = {
     return wrap({ initialized });
   },
   me: async () => {
-    // Current user lookup
     return wrap({ user: { role: 'owner', name: 'Shop Owner' } });
   },
   changePassword: async (data: { newPassword: string; currentPassword?: string }) => {
     await authService.changeOwnerPassword(data.newPassword, data.currentPassword);
     return wrap({ success: true });
   },
-  generateSecure: async () => {
-    const creds = authService.generateAutoSecureCredentials();
-    return wrap(creds);
+  sendPasswordReset: async (email: string) => {
+    await authService.sendPasswordReset(email);
+    return wrap({ success: true });
   },
 };
 
@@ -58,9 +57,17 @@ export const dashboardApi = {
 
     const todayRevenue = todaySales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
     const todayProfit = todaySales.reduce((sum, s) => {
-      // Estimate 25% average garment gross margin if not itemized
-      const cost = s.items?.reduce((c: number, it: any) => c + ((Number(it.purchase_price) || Number(it.selling_price) * 0.7) * (Number(it.quantity) || 1)), 0);
-      return sum + (s.total_amount - (cost || s.total_amount * 0.7));
+      // Calculate real gross profit from actual purchase_price stored in sale items
+      if (s.items && s.items.length > 0) {
+        const cost = s.items.reduce((c: number, it: any) => {
+          const qty = Number(it.quantity) || 1;
+          const pp  = Number(it.purchase_price) || 0;
+          return c + (pp * qty);
+        }, 0);
+        return sum + (Number(s.total_amount) - cost);
+      }
+      // No item-level cost data: cannot calculate profit — return 0 rather than fake number
+      return sum;
     }, 0);
 
     const stockCount = prods.reduce((sum, p) => sum + (Number(p.total_stock) || 0), 0);
@@ -412,26 +419,38 @@ export const reportsApi = {
     if (params?.from) sales = sales.filter(s => s.date >= params.from);
     if (params?.to) sales = sales.filter(s => s.date <= params.to);
 
-    const revenue = sales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
-    const profit = Math.round(revenue * 0.28);
-    const collected = sales.reduce((sum, s) => sum + (Number(s.paid_amount) || 0), 0);
-    const due = sales.reduce((sum, s) => sum + (Number(s.due_amount) || 0), 0);
+    const revenue   = sales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
+    const collected = sales.reduce((sum, s) => sum + (Number(s.paid_amount)   || 0), 0);
+    const due       = sales.reduce((sum, s) => sum + (Number(s.due_amount)    || 0), 0);
+
+    // Real gross profit: selling_total - purchase_cost from stored item data
+    let realCost = 0;
+    let costDataAvailable = false;
+    sales.forEach(s => {
+      s.items?.forEach((it: any) => {
+        const qty = Number(it.quantity) || 1;
+        const pp  = Number(it.purchase_price);
+        if (pp > 0) { realCost += pp * qty; costDataAvailable = true; }
+      });
+    });
+    const profit = costDataAvailable ? Math.round(revenue - realCost) : null;
 
     const topMap: Record<string, { qty: number; revenue: number; profit: number; product_name: string }> = {};
     sales.forEach(s => {
       s.items?.forEach((it: any) => {
         const name = it.product_name || 'Apparel';
         if (!topMap[name]) topMap[name] = { qty: 0, revenue: 0, profit: 0, product_name: name };
-        const q = Number(it.quantity) || 1;
-        const rev = Number(it.total_amount) || Number(it.selling_price) * q;
-        topMap[name].qty += q;
+        const q   = Number(it.quantity)     || 1;
+        const rev = Number(it.total_amount) || (Number(it.selling_price) * q);
+        const pp  = Number(it.purchase_price) || 0;
+        topMap[name].qty     += q;
         topMap[name].revenue += rev;
-        topMap[name].profit += Math.round(rev * 0.28);
+        topMap[name].profit  += pp > 0 ? (rev - pp * q) : 0;
       });
     });
 
     return wrap({
-      totals: { revenue, profit, collected, due },
+      totals: { revenue, profit, collected, due, costDataAvailable },
       topProducts: Object.values(topMap).sort((a, b) => b.qty - a.qty).slice(0, 10),
     });
   },
@@ -462,10 +481,21 @@ export const reportsApi = {
     if (params?.from) sales = sales.filter(s => s.date >= params.from);
     if (params?.to) sales = sales.filter(s => s.date <= params.to);
 
-    const revenue = sales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
-    const grossProfit = Math.round(revenue * 0.28);
+    const revenue       = sales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
     const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-    const netProfit = grossProfit - totalExpenses;
+
+    // Real gross profit from stored purchase_price in sale items
+    let totalCost = 0;
+    let hasCostData = false;
+    sales.forEach(s => {
+      s.items?.forEach((it: any) => {
+        const qty = Number(it.quantity) || 1;
+        const pp  = Number(it.purchase_price);
+        if (pp > 0) { totalCost += pp * qty; hasCostData = true; }
+      });
+    });
+    const grossProfit = hasCostData ? Math.round(revenue - totalCost) : null;
+    const netProfit   = hasCostData ? Math.round(revenue - totalCost - totalExpenses) : null;
 
     const catMap: Record<string, number> = {};
     expenses.forEach(e => {
@@ -473,7 +503,7 @@ export const reportsApi = {
     });
     const expenseByCategory = Object.entries(catMap).map(([category, total]) => ({ category, total }));
 
-    return wrap({ revenue, grossProfit, expenses: totalExpenses, netProfit, expenseByCategory });
+    return wrap({ revenue, grossProfit, expenses: totalExpenses, netProfit, expenseByCategory, hasCostData });
   },
   payments: async (params?: any) => wrap(await dbService.getPayments(params)),
   activity: async () => {

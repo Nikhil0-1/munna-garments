@@ -9,7 +9,7 @@ import {
   sendPasswordResetEmail,
   type User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, query, where, limit } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 export interface OwnerProfile {
@@ -22,7 +22,7 @@ export interface OwnerProfile {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN — real Firebase Auth only, no localStorage bypass
+// SIGN IN — real Firebase Auth with Owner Role Verification
 // ---------------------------------------------------------------------------
 
 export async function signInOwner(email: string, pass: string): Promise<OwnerProfile> {
@@ -37,12 +37,42 @@ export async function signInOwner(email: string, pass: string): Promise<OwnerPro
     const credential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
     const user = credential.user;
 
-    // Load name from Firestore users doc if available
+    // Load and verify Owner role from Firestore
     let name = user.displayName || 'Shop Owner';
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
-      if (snap.exists()) name = snap.data().name || name;
-    } catch { /* Firestore may be offline — name fallback is fine */ }
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.role !== 'owner' || data.active === false) {
+          await signOut(auth);
+          throw new Error('Unauthorized account. Only the designated shop owner can access this panel.');
+        }
+        name = data.name || name;
+      } else {
+        // If user profile doc doesn't exist yet, check if this is the first owner
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'owner'), limit(1)));
+        if (usersSnap.empty) {
+          // Provision owner profile for initial account
+          const ownerDoc: OwnerProfile = {
+            uid: user.uid,
+            email: user.email || cleanEmail,
+            name: name,
+            role: 'owner',
+            active: true,
+            createdAt: new Date().toISOString(),
+          };
+          await setDoc(doc(db, 'users', user.uid), ownerDoc);
+        } else {
+          await signOut(auth);
+          throw new Error('Unauthorized account. Only the designated shop owner can access this panel.');
+        }
+      }
+    } catch (checkErr: any) {
+      if (checkErr.message?.includes('Unauthorized')) {
+        throw checkErr;
+      }
+      // If Firestore network error, allow auth if valid token
+    }
 
     return {
       uid:       user.uid,
@@ -85,7 +115,7 @@ export async function signInOwner(email: string, pass: string): Promise<OwnerPro
 }
 
 // ---------------------------------------------------------------------------
-// FIRST-TIME OWNER SETUP — creates Firebase Auth account + Firestore profile
+// FIRST-TIME OWNER SETUP — creates initial Owner account
 // ---------------------------------------------------------------------------
 
 export async function setupInitialOwner(
@@ -103,6 +133,17 @@ export async function setupInitialOwner(
     throw new Error('Password must be at least 8 characters long.');
   }
 
+  // Security guard: Check if an owner is already registered
+  try {
+    const q = query(collection(db, 'users'), where('role', '==', 'owner'), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      throw new Error('Owner account already initialized. Public registration is strictly disabled for Munna Readymade Garments.');
+    }
+  } catch (err: any) {
+    if (err.message?.includes('already initialized')) throw err;
+  }
+
   try {
     const credential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
     const user = credential.user;
@@ -116,14 +157,14 @@ export async function setupInitialOwner(
       createdAt: new Date().toISOString(),
     };
 
-    // Persist role in Firestore so subscribeToOwnerAuth can verify it
+    // Persist role in Firestore so security rules and session verification validate it
     await setDoc(doc(db, 'users', user.uid), profile);
 
     return profile;
   } catch (err: any) {
     const code = (err?.code || '').toLowerCase();
     if (code.includes('email-already-in-use')) {
-      // Account already exists — just sign in
+      // Account already exists — sign in
       return signInOwner(email, pass);
     }
     if (code.includes('weak-password')) {
@@ -134,7 +175,7 @@ export async function setupInitialOwner(
 }
 
 // ---------------------------------------------------------------------------
-// AUTH STATE CHANGE — persists session across refreshes
+// AUTH STATE CHANGE — persists session across refreshes & enforces owner-only
 // ---------------------------------------------------------------------------
 
 export function subscribeToOwnerAuth(
@@ -150,7 +191,7 @@ export function subscribeToOwnerAuth(
       const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
       if (snap.exists()) {
         const data = snap.data();
-        if (data?.active !== false) {
+        if (data?.role === 'owner' && data?.active !== false) {
           callback({
             uid:       firebaseUser.uid,
             email:     firebaseUser.email || '',
@@ -162,11 +203,11 @@ export function subscribeToOwnerAuth(
           return;
         }
       }
-      // User exists in Firebase Auth but no valid Firestore profile — sign out
+      // Unauthorized user or inactive account — sign out immediately
       await signOut(auth);
       callback(null);
     } catch {
-      // Firestore offline — allow session based on Firebase token alone
+      // Offline fallback: allow current user session if signed in
       callback({
         uid:       firebaseUser.uid,
         email:     firebaseUser.email || '',
@@ -188,7 +229,7 @@ export async function signOutOwner(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// CHANGE PASSWORD (requires current password for reauthentication)
+// CHANGE PASSWORD
 // ---------------------------------------------------------------------------
 
 export async function changeOwnerPassword(
@@ -201,7 +242,6 @@ export async function changeOwnerPassword(
     throw new Error('New password must be at least 8 characters long.');
   }
 
-  // Reauthenticate first if current password provided (required by Firebase for sensitive ops)
   if (currentPass && user.email) {
     const cred = EmailAuthProvider.credential(user.email, currentPass);
     await reauthenticateWithCredential(user, cred);
@@ -211,7 +251,7 @@ export async function changeOwnerPassword(
 }
 
 // ---------------------------------------------------------------------------
-// PASSWORD RESET (sends email via Firebase)
+// PASSWORD RESET
 // ---------------------------------------------------------------------------
 
 export async function sendPasswordReset(email: string): Promise<void> {
@@ -220,10 +260,15 @@ export async function sendPasswordReset(email: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// CHECK INITIALIZATION — always true since Firebase handles it
+// CHECK INITIALIZATION
 // ---------------------------------------------------------------------------
 
 export async function isOwnerInitialized(): Promise<boolean> {
-  // If Firebase Auth is configured, the owner initializes themselves on first sign-up
-  return true;
+  try {
+    const q = query(collection(db, 'users'), where('role', '==', 'owner'), limit(1));
+    const snap = await getDocs(q);
+    return !snap.empty;
+  } catch {
+    return true; // Default to true on error to safeguard against open signups
+  }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Sparkles, ShieldCheck } from 'lucide-react';
@@ -15,9 +15,16 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '', name: 'Munna Readymade Garments Owner', confirmPassword: '' });
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [ownerInitialized, setOwnerInitialized] = useState<boolean>(true);
   const [error, setError] = useState('');
   const { login } = useAuthStore();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    authApi.isInitialized().then(res => {
+      setOwnerInitialized(res.data.initialized);
+    }).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,9 +264,11 @@ export default function Login() {
                 <button onClick={() => { setMode('forgot'); setError(''); }} className="text-amber-700 hover:underline block w-full">
                   Forgot password?
                 </button>
-                <button onClick={() => { setMode('signup'); setError(''); }} className="text-gray-500 hover:text-amber-800 hover:underline">
-                  First time? Create owner account →
-                </button>
+                {!ownerInitialized && (
+                  <button onClick={() => { setMode('signup'); setError(''); }} className="text-gray-500 hover:text-amber-800 hover:underline">
+                    First time? Create owner account →
+                  </button>
+                )}
               </>
             )}
             {(mode === 'signup' || mode === 'forgot') && (

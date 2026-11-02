@@ -16,7 +16,7 @@ import {
   serverTimestamp,
   type DocumentData
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage, auth } from './firebase';
 
 // Collection paths following prompt architecture
@@ -71,33 +71,29 @@ export async function logAction(action: string, module: string, recordId: string
 // ---------------------------------------------------------------------------
 
 /**
- * Generate a unique barcode based on product SKU or retail standard format.
- * Format: e.g. "890" (India standard) + "MRG" + 6-digit unique number
+ * Generate a globally unique barcode using a Firestore atomic counter.
+ * The counter is incremented in a transaction so no two products can
+ * get the same barcode even with concurrent creation.
+ * Format: 890MRG######  (India GS1 prefix + shop prefix + 6-digit sequence)
  */
 export async function generateUniqueBarcode(skuPrefix: string = 'MRG'): Promise<string> {
-  let isUnique = false;
-  let attempts = 0;
-  let barcode = '';
+  const counterRef = doc(db, PATHS.SETTINGS, 'barcode_counter');
 
-  while (!isUnique && attempts < 10) {
-    attempts++;
-    const randomNum = Math.floor(100000 + Math.random() * 900000);
-    barcode = `890${skuPrefix}${randomNum}`;
-
-    // Verify barcode uniqueness against Firestore
-    const q = query(collection(db, PATHS.PRODUCTS), where('barcode', '==', barcode), limit(1));
-    const snap = await getDocs(q);
-    if (snap.empty) {
-      isUnique = true;
-    }
+  try {
+    const newCounter = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const current = snap.exists() ? (Number(snap.data().counter) || 0) : 100000;
+      const next = current + 1;
+      tx.set(counterRef, { counter: next }, { merge: true });
+      return next;
+    });
+    return `890${skuPrefix}${String(newCounter).padStart(6, '0')}`;
+  } catch {
+    // Fallback for offline mode: timestamp-based (still very unlikely to collide)
+    return `890${skuPrefix}${Date.now().toString().slice(-6)}`;
   }
-
-  if (!isUnique) {
-    barcode = `890${skuPrefix}${Date.now().toString().slice(-6)}`;
-  }
-
-  return barcode;
 }
+
 
 /**
  * Check if a barcode already exists in the system.
@@ -1949,16 +1945,25 @@ export async function uploadProductImage(file: File, productId: string): Promise
     throw new Error('Only image files (JPEG, PNG, WEBP) are allowed.');
   }
 
-  // 100% Free & Zero-Setup Strategy:
-  // Try Firebase Storage first; if Storage is on free plan / not activated,
-  // seamlessly compress the image into lightweight Base64 stored directly in Firestore!
+  // If user is not authenticated, use base64 fallback immediately
+  if (!auth.currentUser) {
+    console.warn('Not authenticated — using base64 fallback for image storage.');
+    return await compressImageToBase64(file, 800, 0.75);
+  }
+
   try {
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
     const storageRef = ref(storage, `product_images/${productId}/${filename}`);
-    await uploadBytes(storageRef, file, { contentType: file.type });
+
+    // uploadBytesResumable avoids the CORS preflight issue that uploadBytes triggers
+    await new Promise<void>((resolve, reject) => {
+      const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+      task.on('state_changed', null, reject, () => resolve());
+    });
+
     return await getDownloadURL(storageRef);
   } catch (storageErr) {
-    console.warn('Firebase Storage not active or failed, using 100% Free compressed Base64:', storageErr);
+    console.warn('Firebase Storage upload failed — using compressed Base64 fallback:', storageErr);
     return await compressImageToBase64(file, 800, 0.75);
   }
 }

@@ -34,6 +34,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const PublicCatalogue = lazy(() => import('./pages/catalogue/PublicCatalogue'));
 const CatalogueProductDetail = lazy(() => import('./pages/catalogue/CatalogueProductDetail'));
 const CatalogueCategory = lazy(() => import('./pages/catalogue/CatalogueCategory'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
@@ -111,7 +112,7 @@ export default function App() {
           </Route>
 
           {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
