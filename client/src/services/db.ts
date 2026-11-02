@@ -1911,29 +1911,41 @@ export async function getPayments(params?: { from?: string; to?: string }) {
 // ---------------------------------------------------------------------------
 
 export async function getShopSettings() {
-  const docRef = doc(db, PATHS.SETTINGS, 'general');
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) {
-    const defaultSettings = {
-      shop_name: 'Munna Readymade Garments',
-      shop_location: 'Dhobwal Bazzar',
-      shop_phone: '+91 9876543210',
-      shop_whatsapp: '+919876543210',
-      shop_address: 'Dhobwal Bazzar, Jalandhar, Punjab',
-      shop_city: 'Jalandhar',
-      shop_state: 'Punjab',
-      invoice_prefix: 'MRG',
-      currency_symbol: '₹',
-      return_policy: 'Exchange within 7 days with original invoice.',
-      terms_conditions: 'All prices inclusive of applicable taxes.',
-      thank_you_message: 'Thank you for shopping at Munna Readymade Garments!',
-      invoice_counter: 100,
-    };
-    await setDoc(docRef, defaultSettings);
-    await setDoc(doc(db, PATHS.CATALOGUE_SHOP_INFO, 'general'), defaultSettings);
-    return defaultSettings;
-  }
-  return snap.data();
+  const defaultSettings = {
+    shop_name: 'Munna Readymade Garments',
+    shop_location: 'Dhobwal Bazzar',
+    shop_phone: '+91 9876543210',
+    shop_whatsapp: '+919876543210',
+    shop_address: 'Dhobwal Bazzar, Jalandhar, Punjab',
+    shop_city: 'Jalandhar',
+    shop_state: 'Punjab',
+    invoice_prefix: 'MRG',
+    currency_symbol: '₹',
+    return_policy: 'Exchange within 7 days with original invoice.',
+    terms_conditions: 'All prices inclusive of applicable taxes.',
+    thank_you_message: 'Thank you for shopping at Munna Readymade Garments!',
+    invoice_counter: 100,
+  };
+
+  // 1. Try reading private settings (if authenticated)
+  try {
+    const docRef = doc(db, PATHS.SETTINGS, 'general');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return { ...defaultSettings, ...snap.data() };
+    }
+  } catch (err) {}
+
+  // 2. Try reading public showroom shop info (accessible to all visitors)
+  try {
+    const pubSnap = await getDoc(doc(db, PATHS.CATALOGUE_SHOP_INFO, 'general'));
+    if (pubSnap.exists()) {
+      return { ...defaultSettings, ...pubSnap.data() };
+    }
+  } catch (err) {}
+
+  // 3. Fallback to default shop details
+  return defaultSettings;
 }
 
 export async function updateShopSettings(data: any) {
@@ -2115,30 +2127,86 @@ export async function getPublicCatalogue(params?: { search?: string; category?: 
   return { products, categories, shopSettings };
 }
 
+export function toSlug(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export async function getPublicProduct(slugOrId: string) {
+  if (!slugOrId) throw new Error('Garment not found');
+  const target = String(slugOrId).trim().toLowerCase();
+  const targetSlug = toSlug(target);
+
+  // 1. Direct ID lookup in publicCatalogue
   try {
-    // Try ID first
     const docRef = doc(db, PATHS.CATALOGUE_PRODUCTS, slugOrId);
     const snap = await getDoc(docRef);
     if (snap.exists()) return { id: snap.id, ...snap.data() };
+  } catch {}
 
-    // Try slug query
-    const q = query(collection(db, PATHS.CATALOGUE_PRODUCTS), where('slug', '==', slugOrId), limit(1));
+  // 2. Query in publicCatalogue by slug
+  try {
+    const q = query(collection(db, PATHS.CATALOGUE_PRODUCTS), where('slug', '==', targetSlug), limit(1));
     const qSnap = await getDocs(q);
     if (!qSnap.empty) {
       return { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
     }
   } catch {}
 
-  // Fallback to getProduct
+  // 3. In-memory scan of publicCatalogue documents
+  try {
+    const snap = await getDocs(collection(db, PATHS.CATALOGUE_PRODUCTS));
+    if (!snap.empty) {
+      const match = snap.docs.map(d => ({ id: d.id, ...d.data() })).find((p: any) => {
+        const pId = String(p.id || '').toLowerCase();
+        const pSku = String(p.sku || '').toLowerCase();
+        const pSlug = String(p.slug || '').toLowerCase();
+        const pNameSlug = toSlug(p.name || '');
+        const pName = String(p.name || '').toLowerCase();
+
+        return (
+          pId === target ||
+          pSlug === targetSlug ||
+          pNameSlug === targetSlug ||
+          pSku === target ||
+          pName === target
+        );
+      });
+      if (match) return match;
+    }
+  } catch {}
+
+  // 4. Try getProduct by ID from private/local
   try {
     const prod = await getProduct(slugOrId);
     if (prod) return sanitizePublicProduct(prod.id, prod);
   } catch {}
 
-  const prods = await getProducts();
-  const match = prods.find(p => p.slug === slugOrId || p.id === slugOrId);
-  if (match) return sanitizePublicProduct(match.id, match);
+  // 5. Fallback: match across all products (from Firestore or localStorage or DEFAULT_PRODUCTS)
+  try {
+    const prods = await getProducts({ status: 'all' });
+    const match = prods.find((p: any) => {
+      if (!p) return false;
+      const pId = String(p.id || '').toLowerCase();
+      const pSku = String(p.sku || '').toLowerCase();
+      const pSlug = String(p.slug || '').toLowerCase();
+      const pNameSlug = toSlug(p.name || '');
+      const pName = String(p.name || '').toLowerCase();
+
+      return (
+        pId === target ||
+        pSlug === targetSlug ||
+        pNameSlug === targetSlug ||
+        pSku === target ||
+        pName === target
+      );
+    });
+
+    if (match) return sanitizePublicProduct(match.id, match);
+  } catch (err) {}
 
   throw new Error('Garment not found');
 }
