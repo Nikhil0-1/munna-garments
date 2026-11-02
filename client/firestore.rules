@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper: is the request from an authenticated user? ────────────────────
+    // In this single-owner store (Munna Readymade Garments), only the authorized
+    // shop owner possesses login credentials. No public signup is permitted.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ── 1. PUBLIC DIGITAL CATALOGUE & SHOWROOM ─────────────────────────────────
+    // Public visitors (unauthenticated) worldwide can browse published products & categories.
+    // Only the authenticated shop owner can create, update, or remove items.
+    match /publicCatalogue/{document=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // ── 2. PRIVATE SHOP DATA (Strictly Authenticated Owner) ────────────────────
+    // Sales, Sale Items, Purchases, Purchase Items, Customers, Suppliers,
+    // Expenses, Payments, Ledgers, Inventory, Stock Movements, Invoices, Settings.
+    match /privateShopData/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── 3. USER PROFILES ───────────────────────────────────────────────────────
+    match /users/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── 4. DEFAULT DENY ────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

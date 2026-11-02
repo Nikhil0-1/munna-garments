@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { catalogueApi } from '../../api';
 import { formatCurrency } from '../../utils';
+import { getProductDisplayImage, getGarmentCategoryFallback } from '../../utils/productImages';
 import Button from '../../components/ui/Button';
 
 export default function PublicCatalogue() {
@@ -230,7 +231,7 @@ export default function PublicCatalogue() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-6">
             {products.map(p => {
-              const primaryImage = p.images && p.images.length > 0 ? p.images[0] : null;
+              const primaryImage = getProductDisplayImage(p);
               const hasDiscount = p.mrp > p.selling_price;
               const savings = hasDiscount ? p.mrp - p.selling_price : 0;
               const discountPercent = hasDiscount && p.mrp > 0 ? Math.round((savings / p.mrp) * 100) : 0;
@@ -249,22 +250,13 @@ export default function PublicCatalogue() {
                       onClick={() => navigate(`/catalogue/product/${p.slug || p.id}`)}
                       className="h-48 sm:h-52 bg-gradient-to-br from-amber-50/50 to-orange-50/30 relative flex items-center justify-center overflow-hidden cursor-pointer"
                     >
-                      {primaryImage && !isFailed ? (
-                        <img
-                          src={primaryImage}
-                          alt={p.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                          onError={() => setFailedImages(prev => ({ ...prev, [p.id]: true }))}
-                        />
-                      ) : (
-                        <div className="text-center p-3">
-                          <span className="font-serif text-3xl font-bold text-amber-900/20 uppercase tracking-widest block select-none">
-                            {p.name.slice(0, 2)}
-                          </span>
-                          <span className="text-[10px] text-amber-900/40 block mt-1">Munna Garments</span>
-                        </div>
-                      )}
+                      <img
+                        src={!isFailed ? primaryImage : getGarmentCategoryFallback(p.name, p.category_name)}
+                        alt={p.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
+                        onError={() => setFailedImages(prev => ({ ...prev, [p.id]: true }))}
+                      />
 
                       {/* Badges Overlay */}
                       <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">

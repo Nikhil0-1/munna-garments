@@ -234,6 +234,17 @@ export default function ProductDetail() {
           </div>
 
           <div className="space-y-6">
+            {/* Product Images (Web URL System) */}
+            <Card>
+              <h3 className="text-sm font-semibold text-gray-800 mb-2">Product Images (Web URL System)</h3>
+              <p className="text-xs text-gray-500 mb-3">Add image URLs from ImgBB, Postimages, or any web link. First photo is used on the public showroom.</p>
+              <ProductImageManager
+                images={product.images || []}
+                onChange={(images) => setProduct({ ...product, images })}
+                maxImages={6}
+              />
+            </Card>
+
             {/* Live Barcode Card */}
             <Card>
               <div className="flex items-center justify-between mb-3">

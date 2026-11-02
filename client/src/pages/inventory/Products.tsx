@@ -11,6 +11,7 @@ import Input from '../../components/ui/Input';
 import EmptyState from '../../components/ui/EmptyState';
 import { SkeletonTable } from '../../components/ui/Skeleton';
 import ProductImageManager from '../../components/ui/ProductImageManager';
+import { getProductDisplayImage } from '../../utils/productImages';
 import toast from 'react-hot-toast';
 
 export default function Products() {
@@ -118,10 +119,14 @@ export default function Products() {
     }
 
     if (newProd.barcode) {
-      const check = await productsApi.checkBarcode(newProd.barcode);
-      if (check.data.exists) {
-        toast.error(`Barcode "${newProd.barcode}" already exists! Please use a unique barcode.`);
-        return;
+      try {
+        const check = await productsApi.checkBarcode(newProd.barcode);
+        if (check.data.exists) {
+          toast.error(`Barcode "${newProd.barcode}" already exists! Please use a unique barcode.`);
+          return;
+        }
+      } catch {
+        // Non-blocking barcode verification
       }
     }
 
@@ -141,7 +146,8 @@ export default function Products() {
       });
       fetchProducts();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to save product');
+      const msg = err.message || err.response?.data?.error || 'Failed to save product';
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -317,13 +323,12 @@ export default function Products() {
                   <tr key={p.id} className="hover:bg-amber-50/20 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        {p.images && p.images[0] ? (
-                          <img src={p.images[0]} alt={p.name} className="w-10 h-10 rounded-xl object-cover border border-amber-200 shadow-xs" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center font-bold text-amber-800 text-xs">
-                            {p.name.slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
+                        <img
+                          src={getProductDisplayImage(p)}
+                          alt={p.name}
+                          className="w-10 h-10 rounded-xl object-cover border border-amber-200 shadow-xs flex-shrink-0"
+                          loading="lazy"
+                        />
                         <div>
                           <p className="font-semibold text-gray-800">{p.name}</p>
                           <p className="text-xs text-gray-400">{p.brand || 'Munna Collection'}</p>

@@ -100,13 +100,24 @@ export async function generateUniqueBarcode(skuPrefix: string = 'MRG'): Promise<
  */
 export async function checkBarcodeExists(barcode: string, excludeProductId?: string): Promise<boolean> {
   if (!barcode) return false;
-  const q = query(collection(db, PATHS.PRODUCTS), where('barcode', '==', barcode.trim()), limit(5));
-  const snap = await getDocs(q);
-  if (snap.empty) return false;
-  if (excludeProductId) {
-    return snap.docs.some(d => d.id !== excludeProductId);
+  try {
+    const q = query(collection(db, PATHS.PRODUCTS), where('barcode', '==', barcode.trim()), limit(5));
+    const snap = await getDocs(q);
+    if (snap.empty) return false;
+    if (excludeProductId) {
+      return snap.docs.some(d => d.id !== excludeProductId);
+    }
+    return true;
+  } catch {
+    try {
+      const cached = localStorage.getItem('mrg_local_products');
+      if (cached) {
+        const list = JSON.parse(cached);
+        return list.some((p: any) => p.barcode === barcode.trim() && (!excludeProductId || p.id !== excludeProductId));
+      }
+    } catch {}
+    return false;
   }
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -784,8 +795,12 @@ export async function getProduct(id: string) {
 export async function createProduct(data: any) {
   // Validate barcode uniqueness if provided
   if (data.barcode) {
-    const exists = await checkBarcodeExists(data.barcode);
-    if (exists) throw new Error(`Barcode '${data.barcode}' already exists. Please generate or enter a unique barcode.`);
+    try {
+      const exists = await checkBarcodeExists(data.barcode);
+      if (exists) throw new Error(`Barcode '${data.barcode}' already exists. Please generate or enter a unique barcode.`);
+    } catch (err: any) {
+      if (err.message?.includes('already exists')) throw err;
+    }
   } else {
     data.barcode = await generateUniqueBarcode('MRG');
   }
@@ -794,9 +809,24 @@ export async function createProduct(data: any) {
     data.sku = `MRG-${Date.now().toString().slice(-6)}`;
   }
 
+  // Normalize images
+  let images: string[] = [];
+  if (Array.isArray(data.images)) {
+    images = data.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0);
+  } else if (typeof data.images === 'string' && data.images.trim()) {
+    images = [data.images.trim()];
+  }
+  if (images.length === 0 && data.image_url) {
+    images = [String(data.image_url).trim()];
+  }
+  if (images.length === 0 && data.image) {
+    images = [String(data.image).trim()];
+  }
+
   const newDocRef = doc(collection(db, PATHS.PRODUCTS));
   const productData = {
     ...data,
+    images,
     active: true,
     show_in_catalogue: data.show_in_catalogue ?? true,
     is_featured: data.is_featured ?? false,
@@ -818,8 +848,20 @@ export async function createProduct(data: any) {
   const prodId = newDocRef.id || `prod_${Date.now()}`;
   try {
     await batch.commit();
-  } catch (e) {
-    console.warn('Firestore write failed, saved locally:', e);
+  } catch (e: any) {
+    console.warn('Firestore write failed, saving locally:', e);
+    // Always persist to local cache so data is never lost
+    try {
+      const cached = localStorage.getItem('mrg_local_products');
+      let list = cached ? JSON.parse(cached) : [...DEFAULT_PRODUCTS];
+      list.unshift({ id: prodId, ...productData });
+      localStorage.setItem('mrg_local_products', JSON.stringify(list));
+    } catch {}
+
+    if (e.code === 'permission-denied' || e.message?.includes('permission')) {
+      throw new Error('Firebase Permission Error: Please log out and log in again with Owner credentials.');
+    }
+    throw e;
   }
 
   // Always save to persistent local store
@@ -1978,6 +2020,20 @@ function sanitizePublicProduct(id: string, prod: any) {
   const colors = [...new Set(variants.map((v: any) => v.color).filter(Boolean))];
   const totalStock = variants.reduce((sum: number, v: any) => sum + (Number(v.stock) || 0), Number(prod.stock) || 0);
 
+  // Normalize images
+  let images: string[] = [];
+  if (Array.isArray(prod.images)) {
+    images = prod.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0);
+  } else if (typeof prod.images === 'string' && prod.images.trim()) {
+    images = [prod.images.trim()];
+  }
+  if (images.length === 0 && prod.image_url) {
+    images = [String(prod.image_url).trim()];
+  }
+  if (images.length === 0 && prod.image) {
+    images = [String(prod.image).trim()];
+  }
+
   return {
     id,
     name: prod.name,
@@ -1988,13 +2044,14 @@ function sanitizePublicProduct(id: string, prod: any) {
     gender: prod.gender || 'Men',
     mrp: Number(prod.mrp) || 0,
     selling_price: Number(prod.selling_price) || 0,
-    images: prod.images || [],
+    images,
+    image_url: images[0] || null,
     description: prod.description || '',
     sizes,
     colors,
     in_stock: totalStock > 0,
     is_featured: prod.is_featured || false,
-    is_new_arrival: prod.is_new_arrival || false,
+    is_new_arrival: prod.is_new_arrival ?? true,
     is_best_seller: prod.is_best_seller || false,
     category_id: prod.category_id || '',
     category_name: prod.category_name || '',
@@ -2002,8 +2059,23 @@ function sanitizePublicProduct(id: string, prod: any) {
 }
 
 export async function getPublicCatalogue(params?: { search?: string; category?: string; gender?: string }) {
-  const snap = await getDocs(collection(db, PATHS.CATALOGUE_PRODUCTS));
-  let products = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+  let products: any[] = [];
+  try {
+    const snap = await getDocs(collection(db, PATHS.CATALOGUE_PRODUCTS));
+    if (!snap.empty) {
+      products = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+    } else {
+      const prods = await getProducts();
+      products = prods
+        .filter(p => p.show_in_catalogue !== false && p.active !== false && !p.archived)
+        .map(p => sanitizePublicProduct(p.id, p));
+    }
+  } catch (err) {
+    const prods = await getProducts();
+    products = prods
+      .filter(p => p.show_in_catalogue !== false && p.active !== false && !p.archived)
+      .map(p => sanitizePublicProduct(p.id, p));
+  }
 
   if (params?.search) {
     const s = params.search.toLowerCase();
@@ -2016,26 +2088,45 @@ export async function getPublicCatalogue(params?: { search?: string; category?: 
     products = products.filter(p => p.gender === params.gender);
   }
 
-  const catSnap = await getDocs(collection(db, PATHS.CATALOGUE_CATEGORIES));
-  const categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let categories: any[] = [];
+  try {
+    const catSnap = await getDocs(collection(db, PATHS.CATALOGUE_CATEGORIES));
+    categories = catSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch {}
 
-  const settingsSnap = await getDoc(doc(db, PATHS.CATALOGUE_SHOP_INFO, 'general'));
-  const shopSettings = settingsSnap.exists() ? settingsSnap.data() : {};
+  let shopSettings: any = {};
+  try {
+    const settingsSnap = await getDoc(doc(db, PATHS.CATALOGUE_SHOP_INFO, 'general'));
+    shopSettings = settingsSnap.exists() ? settingsSnap.data() : {};
+  } catch {}
 
   return { products, categories, shopSettings };
 }
 
 export async function getPublicProduct(slugOrId: string) {
-  // Try ID first
-  const docRef = doc(db, PATHS.CATALOGUE_PRODUCTS, slugOrId);
-  const snap = await getDoc(docRef);
-  if (snap.exists()) return { id: snap.id, ...snap.data() };
+  try {
+    // Try ID first
+    const docRef = doc(db, PATHS.CATALOGUE_PRODUCTS, slugOrId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) return { id: snap.id, ...snap.data() };
 
-  // Try slug query
-  const q = query(collection(db, PATHS.CATALOGUE_PRODUCTS), where('slug', '==', slugOrId), limit(1));
-  const qSnap = await getDocs(q);
-  if (!qSnap.empty) {
-    return { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
-  }
-  throw new Error('Product not found in catalogue');
+    // Try slug query
+    const q = query(collection(db, PATHS.CATALOGUE_PRODUCTS), where('slug', '==', slugOrId), limit(1));
+    const qSnap = await getDocs(q);
+    if (!qSnap.empty) {
+      return { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
+    }
+  } catch {}
+
+  // Fallback to getProduct
+  try {
+    const prod = await getProduct(slugOrId);
+    if (prod) return sanitizePublicProduct(prod.id, prod);
+  } catch {}
+
+  const prods = await getProducts();
+  const match = prods.find(p => p.slug === slugOrId || p.id === slugOrId);
+  if (match) return sanitizePublicProduct(match.id, match);
+
+  throw new Error('Garment not found');
 }

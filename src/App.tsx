@@ -1,6 +1,8 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './services/firebase';
 import { useAuthStore } from './store';
 import AdminLayout from './components/layout/AdminLayout';
 import PageLoader from './components/ui/PageLoader';
@@ -37,14 +39,59 @@ const CatalogueCategory = lazy(() => import('./pages/catalogue/CatalogueCategory
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { token } = useAuthStore();
-  if (!token) return <Navigate to="/login" replace />;
+  const { token, logout, login } = useAuthStore();
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    // Keep Firebase Auth state and store synchronized
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        if (token) {
+          logout();
+        }
+      } else {
+        if (!token) {
+          login({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            name: firebaseUser.displayName || 'Shop Owner',
+            role: 'owner',
+          }, firebaseUser.uid);
+        }
+      }
+      setAuthReady(true);
+    });
+
+    return () => unsub();
+  }, [token, logout, login]);
+
+  if (!authReady) {
+    return <PageLoader />;
+  }
+
+  if (!token || !auth.currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
   return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
-  if (token) return <Navigate to="/dashboard" replace />;
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, () => {
+      setAuthReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  if (!authReady) {
+    return <PageLoader />;
+  }
+
+  if (token && auth.currentUser) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 

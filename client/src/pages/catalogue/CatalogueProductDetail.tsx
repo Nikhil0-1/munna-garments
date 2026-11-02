@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { catalogueApi } from '../../api';
 import { formatCurrency } from '../../utils';
+import { getGarmentCategoryFallback, cleanImageUrl } from '../../utils/productImages';
 import Button from '../../components/ui/Button';
 
 export default function CatalogueProductDetail() {
@@ -76,8 +77,12 @@ export default function CatalogueProductDetail() {
     );
   }
 
-  const images: string[] = product.images && product.images.length > 0 ? product.images : [];
-  const currentImage = images[selectedImageIndex];
+  const fallbackImage = getGarmentCategoryFallback(product.name, product.category_name);
+  const rawImages: string[] = Array.isArray(product.images) && product.images.length > 0
+    ? product.images
+    : (product.image_url ? [product.image_url] : [fallbackImage]);
+  const images = rawImages.map(img => cleanImageUrl(img));
+  const currentImage = images[selectedImageIndex] || fallbackImage;
   const sellingPrice = Number(product.selling_price) || 0;
   const mrp = Number(product.mrp) || 0;
   const hasDiscount = mrp > sellingPrice;
